@@ -1,11 +1,13 @@
 "use client";
 
 import { Server, Globe, Activity } from "lucide-react";
-import { useServers } from "@/hooks/use-servers";
-import { useSites } from "@/hooks/use-sites";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServers, SERVERS_REFETCH_INTERVAL } from "@/hooks/use-servers";
+import { useSites, SITES_REFETCH_INTERVAL } from "@/hooks/use-sites";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ServersTable } from "@/components/servers-table";
 import { SitesTable } from "@/components/sites-table";
+import { RefreshIndicator } from "@/components/refresh-indicator";
 
 function StatCard({
   title,
@@ -37,8 +39,19 @@ function StatCard({
 }
 
 export default function DashboardPage() {
-  const { data: servers } = useServers();
-  const { data: sites } = useSites();
+  const qc = useQueryClient();
+
+  const {
+    data: servers,
+    isFetching: serversFetching,
+    dataUpdatedAt: serversUpdatedAt,
+  } = useServers();
+
+  const {
+    data: sites,
+    isFetching: sitesFetching,
+    dataUpdatedAt: sitesUpdatedAt,
+  } = useSites();
 
   const connectedServers =
     servers?.filter((s) => s.Status === "connected").length ?? 0;
@@ -47,11 +60,29 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">
-          Overview of your infrastructure
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-muted-foreground">
+            Overview of your infrastructure
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <RefreshIndicator
+            isFetching={serversFetching}
+            dataUpdatedAt={serversUpdatedAt}
+            intervalSeconds={SERVERS_REFETCH_INTERVAL / 1000}
+            onRefresh={() => {
+              qc.invalidateQueries({ queryKey: ["servers"] });
+              qc.invalidateQueries({ queryKey: ["sites"] });
+            }}
+          />
+          {sitesFetching && !serversFetching && (
+            <span className="text-xs text-muted-foreground">
+              Refreshing sites…
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -71,17 +102,35 @@ export default function DashboardPage() {
           title="Status"
           value="OK"
           icon={Activity}
-          description="API is healthy"
+          description={`Auto-refresh every ${SERVERS_REFETCH_INTERVAL / 1000}s`}
         />
       </div>
 
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Recent Servers</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Servers</h3>
+          <RefreshIndicator
+            isFetching={serversFetching}
+            dataUpdatedAt={serversUpdatedAt}
+            intervalSeconds={SERVERS_REFETCH_INTERVAL / 1000}
+            onRefresh={() =>
+              qc.invalidateQueries({ queryKey: ["servers"] })
+            }
+          />
+        </div>
         <ServersTable />
       </div>
 
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Recent Sites</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Sites</h3>
+          <RefreshIndicator
+            isFetching={sitesFetching}
+            dataUpdatedAt={sitesUpdatedAt}
+            intervalSeconds={SITES_REFETCH_INTERVAL / 1000}
+            onRefresh={() => qc.invalidateQueries({ queryKey: ["sites"] })}
+          />
+        </div>
         <SitesTable />
       </div>
     </div>

@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.9 - 2026-04-28
+
+### Added
+
+- Auto-refresh for servers and sites tables every 15 seconds via TanStack Query `refetchInterval`.
+- `RefreshIndicator` component showing live status: green dot when idle, spinner when fetching, "Updated Xs ago" counter, and manual refresh button.
+- Dashboard, Servers, and Sites pages updated with refresh indicators.
+
 ## v0.1.8 - 2026-04-28
 
 ### Added
