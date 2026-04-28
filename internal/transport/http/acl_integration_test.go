@@ -40,7 +40,7 @@ func TestSiteGetByID_ACLAllowed(t *testing.T) {
 
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewSiteHandler(siteService, nil, teamService)
+	handler := NewSiteHandler(siteService, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -74,7 +74,7 @@ func TestSiteGetByID_ACLForbidden(t *testing.T) {
 
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewSiteHandler(siteService, nil, teamService)
+	handler := NewSiteHandler(siteService, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -88,6 +88,54 @@ func TestSiteGetByID_ACLForbidden(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSiteGetByID_ACLForbidden_WritesAuditEvent(t *testing.T) {
+	pool := openTestDB(t)
+	ensureServersTable(t, pool)
+	ensureSitesTable(t, pool)
+	ensureTeamsAccessTables(t, pool)
+	truncateServers(t, pool)
+	truncateStatusEvents(t, pool)
+
+	serverRepo := postgresrepo.NewServerRepository(pool, testCipher{})
+	siteRepo := postgresrepo.NewSiteRepository(pool)
+	teamRepo := postgresrepo.NewTeamRepository(pool)
+	statusRepo := postgresrepo.NewStatusEventRepository(pool)
+
+	server := createTestServer(t, serverRepo, "10.0.1.111")
+	site := createTestSite(t, siteRepo, server.ID, "forbidden-audit.example.com")
+	_ = createTestTeam(t, pool, "team-acl-no-grant-audit")
+
+	siteService := sitesvc.NewService(siteRepo, serverRepo)
+	teamService := teamsvc.NewService(teamRepo)
+	handler := NewSiteHandler(siteService, nil, teamService, statusRepo)
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	withAuthFallback(engine)
+	engine.GET("/api/v1/sites/:id", handler.GetByID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/"+site.ID, nil)
+	req.Header.Set("X-Team-ID", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var count int
+	if err := pool.QueryRow(
+		t.Context(),
+		`SELECT COUNT(*) FROM status_events WHERE resource_type = 'site' AND resource_id = $1::uuid AND to_status = 'access_denied'`,
+		site.ID,
+	).Scan(&count); err != nil {
+		t.Fatalf("query status_events: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 access_denied status event, got %d", count)
 	}
 }
 
@@ -109,7 +157,7 @@ func TestSiteUpdate_ACLAdminAllowed(t *testing.T) {
 
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewSiteHandler(siteService, nil, teamService)
+	handler := NewSiteHandler(siteService, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -146,7 +194,7 @@ func TestSiteUpdate_ACLViewerForbidden(t *testing.T) {
 
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewSiteHandler(siteService, nil, teamService)
+	handler := NewSiteHandler(siteService, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -183,7 +231,7 @@ func TestSiteDelete_ACLAdminAllowed(t *testing.T) {
 
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewSiteHandler(siteService, nil, teamService)
+	handler := NewSiteHandler(siteService, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -218,7 +266,7 @@ func TestSiteDeploy_ACLViewerForbidden(t *testing.T) {
 
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewSiteHandler(siteService, nil, teamService)
+	handler := NewSiteHandler(siteService, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -253,7 +301,7 @@ func TestServerGetByID_ACLAllowedViaSiteGrant(t *testing.T) {
 
 	serverService := serversvc.NewService(serverRepo, sshExecutorStub{}, nil)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewServerHandler(serverService, nil, nil, teamService)
+	handler := NewServerHandler(serverService, nil, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -288,7 +336,7 @@ func TestServerUpdate_ACLViewerForbidden(t *testing.T) {
 
 	serverService := serversvc.NewService(serverRepo, sshExecutorStub{}, nil)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewServerHandler(serverService, nil, nil, teamService)
+	handler := NewServerHandler(serverService, nil, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -326,7 +374,7 @@ func TestSiteList_ACLFiltersInaccessibleItems(t *testing.T) {
 
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewSiteHandler(siteService, nil, teamService)
+	handler := NewSiteHandler(siteService, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -374,7 +422,7 @@ func TestServerList_ACLFiltersInaccessibleItems(t *testing.T) {
 
 	serverService := serversvc.NewService(serverRepo, sshExecutorStub{}, nil)
 	teamService := teamsvc.NewService(teamRepo)
-	handler := NewServerHandler(serverService, nil, nil, teamService)
+	handler := NewServerHandler(serverService, nil, nil, teamService, nil)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

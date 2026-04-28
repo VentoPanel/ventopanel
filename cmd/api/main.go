@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/your-org/ventopanel/internal/app/config"
-	"github.com/your-org/ventopanel/internal/infra/db"
 	icrypto "github.com/your-org/ventopanel/internal/infra/crypto"
+	"github.com/your-org/ventopanel/internal/infra/db"
 	ilock "github.com/your-org/ventopanel/internal/infra/lock"
 	ilogger "github.com/your-org/ventopanel/internal/infra/logger"
 	"github.com/your-org/ventopanel/internal/infra/notifier"
@@ -88,7 +88,7 @@ func main() {
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier)
 
-	engine := buildRouter(cfg, logger, serverService, siteService, teamService, deployService, provisionService, sslService, auditService)
+	engine := buildRouter(cfg, logger, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -129,6 +129,7 @@ func buildRouter(
 	provisionService *provisionsvc.Service,
 	sslService *sslsvc.Service,
 	auditService *auditsvc.Service,
+	statusEventRepo *postgresrepo.StatusEventRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -148,8 +149,8 @@ func buildRouter(
 	healthHandler := httptransport.NewHealthHandler()
 	metricsHandler := httptransport.NewMetricsHandler()
 	devAuthHandler := httptransport.NewDevAuthHandler(cfg.AppEnv == "development", cfg.AuthJWTSecret)
-	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService)
-	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService)
+	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService, statusEventRepo)
+	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService, statusEventRepo)
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)
 	auditHandler := httptransport.NewAuditHandler(auditService)

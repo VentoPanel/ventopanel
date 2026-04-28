@@ -8,7 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	domain "github.com/your-org/ventopanel/internal/domain/server"
+	"github.com/your-org/ventopanel/internal/infra/metrics"
 	provisionsvc "github.com/your-org/ventopanel/internal/service/provision"
 	serversvc "github.com/your-org/ventopanel/internal/service/server"
 	teamsvc "github.com/your-org/ventopanel/internal/service/team"
@@ -19,14 +21,42 @@ type ServerHandler struct {
 	provisionService *provisionsvc.Service
 	sslService       sslQueue
 	teamService      *teamsvc.Service
+	auditWriter      auditdomain.StatusEventWriter
 }
 
 type sslQueue interface {
 	EnqueueRenew(ctx context.Context, serverID string) error
 }
 
-func NewServerHandler(service *serversvc.Service, provisionService *provisionsvc.Service, sslService sslQueue, teamService *teamsvc.Service) *ServerHandler {
-	return &ServerHandler{service: service, provisionService: provisionService, sslService: sslService, teamService: teamService}
+func NewServerHandler(
+	service *serversvc.Service,
+	provisionService *provisionsvc.Service,
+	sslService sslQueue,
+	teamService *teamsvc.Service,
+	auditWriter auditdomain.StatusEventWriter,
+) *ServerHandler {
+	return &ServerHandler{
+		service:          service,
+		provisionService: provisionService,
+		sslService:       sslService,
+		teamService:      teamService,
+		auditWriter:      auditWriter,
+	}
+}
+
+func (h *ServerHandler) recordDenied(teamID, serverID, reason string) {
+	metrics.IncACLDenied("server", reason)
+	if h.auditWriter == nil || strings.TrimSpace(serverID) == "" {
+		return
+	}
+	_ = h.auditWriter.WriteStatusEvent(auditdomain.StatusEvent{
+		ResourceType: "server",
+		ResourceID:   serverID,
+		FromStatus:   "access_requested",
+		ToStatus:     "access_denied",
+		Reason:       reason,
+		TaskID:       "acl:server:" + teamID,
+	})
 }
 
 func (h *ServerHandler) authorizeServer(c *gin.Context, serverID string, requireWrite bool) bool {
@@ -36,6 +66,7 @@ func (h *ServerHandler) authorizeServer(c *gin.Context, serverID string, require
 
 	teamID, ok := requireTeamID(c)
 	if !ok {
+		h.recordDenied("", serverID, "missing_team_identity")
 		return false
 	}
 
@@ -49,9 +80,11 @@ func (h *ServerHandler) authorizeServer(c *gin.Context, serverID string, require
 		case "owner", "admin":
 			return true
 		case "":
+			h.recordDenied(teamID, serverID, "no_grant")
 			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 			return false
 		default:
+			h.recordDenied(teamID, serverID, "insufficient_role")
 			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden: insufficient role"})
 			return false
 		}
@@ -63,6 +96,7 @@ func (h *ServerHandler) authorizeServer(c *gin.Context, serverID string, require
 		return false
 	}
 	if !allowed {
+		h.recordDenied(teamID, serverID, "no_grant")
 		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 		return false
 	}

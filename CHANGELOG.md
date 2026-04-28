@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.4 - 2026-04-28
+
+### Added
+
+- ACL deny observability with Prometheus metric `ventopanel_acl_denied_total` labeled by resource and deny reason.
+- ACL deny audit events for server/site authorization failures, written to `status_events` with `to_status=access_denied`.
+- Integration test coverage to verify deny decisions are persisted in audit storage.
+
 ## v0.1.0 - 2026-04-28
 
 ### Added

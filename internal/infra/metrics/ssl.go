@@ -45,6 +45,7 @@ func Register() {
 			sslRenewSuccessTotal,
 			sslRenewFailedTotal,
 			sslLastBatchServerCount,
+			aclDeniedTotal,
 		)
 	})
 }

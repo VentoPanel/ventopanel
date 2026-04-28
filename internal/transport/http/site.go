@@ -7,7 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	domain "github.com/your-org/ventopanel/internal/domain/site"
+	"github.com/your-org/ventopanel/internal/infra/metrics"
 	deploysvc "github.com/your-org/ventopanel/internal/service/deploy"
 	sitesvc "github.com/your-org/ventopanel/internal/service/site"
 	teamsvc "github.com/your-org/ventopanel/internal/service/team"
@@ -17,11 +19,28 @@ type SiteHandler struct {
 	service       *sitesvc.Service
 	deployService *deploysvc.Service
 	teamService   *teamsvc.Service
+	auditWriter   auditdomain.StatusEventWriter
+}
+
+func (h *SiteHandler) recordDenied(teamID, siteID, reason string) {
+	metrics.IncACLDenied("site", reason)
+	if h.auditWriter == nil || strings.TrimSpace(siteID) == "" {
+		return
+	}
+	_ = h.auditWriter.WriteStatusEvent(auditdomain.StatusEvent{
+		ResourceType: "site",
+		ResourceID:   siteID,
+		FromStatus:   "access_requested",
+		ToStatus:     "access_denied",
+		Reason:       reason,
+		TaskID:       "acl:site:" + teamID,
+	})
 }
 
 func (h *SiteHandler) authorizeSite(c *gin.Context, siteID string, requireWrite bool) bool {
 	teamID, ok := requireTeamID(c)
 	if !ok {
+		h.recordDenied("", siteID, "missing_team_identity")
 		return false
 	}
 
@@ -35,9 +54,11 @@ func (h *SiteHandler) authorizeSite(c *gin.Context, siteID string, requireWrite 
 		case "owner", "admin":
 			return true
 		case "":
+			h.recordDenied(teamID, siteID, "no_grant")
 			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 			return false
 		default:
+			h.recordDenied(teamID, siteID, "insufficient_role")
 			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden: insufficient role"})
 			return false
 		}
@@ -49,14 +70,25 @@ func (h *SiteHandler) authorizeSite(c *gin.Context, siteID string, requireWrite 
 		return false
 	}
 	if !allowed {
+		h.recordDenied(teamID, siteID, "no_grant")
 		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 		return false
 	}
 	return true
 }
 
-func NewSiteHandler(service *sitesvc.Service, deployService *deploysvc.Service, teamService *teamsvc.Service) *SiteHandler {
-	return &SiteHandler{service: service, deployService: deployService, teamService: teamService}
+func NewSiteHandler(
+	service *sitesvc.Service,
+	deployService *deploysvc.Service,
+	teamService *teamsvc.Service,
+	auditWriter auditdomain.StatusEventWriter,
+) *SiteHandler {
+	return &SiteHandler{
+		service:       service,
+		deployService: deployService,
+		teamService:   teamService,
+		auditWriter:   auditWriter,
+	}
 }
 
 func (h *SiteHandler) Create(c *gin.Context) {
