@@ -13,6 +13,7 @@ import (
 	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	domain "github.com/your-org/ventopanel/internal/domain/deploy"
 	"github.com/your-org/ventopanel/internal/domain/lifecycle"
+	"github.com/your-org/ventopanel/internal/domain/tasklog"
 	"github.com/your-org/ventopanel/internal/infra/lock"
 	sitedomain "github.com/your-org/ventopanel/internal/domain/site"
 )
@@ -29,6 +30,7 @@ type Service struct {
 	client     *asynq.Client
 	lock       lockManager
 	audit      auditdomain.StatusEventWriter
+	taskLogs   tasklog.Repository
 }
 
 type sslQueue interface {
@@ -54,6 +56,7 @@ func NewService(
 	client *asynq.Client,
 	lock lockManager,
 	audit auditdomain.StatusEventWriter,
+	taskLogs tasklog.Repository,
 ) *Service {
 	return &Service{
 		siteRepo:   siteRepo,
@@ -65,6 +68,7 @@ func NewService(
 		client:     client,
 		lock:       lock,
 		audit:      audit,
+		taskLogs:   taskLogs,
 	}
 }
 
@@ -95,93 +99,144 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		defer func() { _ = s.lock.Release(context.Background(), lockKey) }()
 	}
 
+	// Create task log entry.
+	logEntry := &tasklog.TaskLog{SiteID: siteID, TaskType: "deploy"}
+	if s.taskLogs != nil {
+		_ = s.taskLogs.Create(ctx, logEntry)
+	}
+	var outputBuf strings.Builder
+	finishLog := func(status, extra string) {
+		if s.taskLogs == nil || logEntry.ID == "" {
+			return
+		}
+		_ = s.taskLogs.Finish(context.Background(), logEntry.ID, status, outputBuf.String()+extra)
+	}
+	appendOutput := func(cmd, out string, err error) {
+		outputBuf.WriteString("$ " + cmd + "\n")
+		if out != "" {
+			outputBuf.WriteString(out + "\n")
+		}
+		if err != nil {
+			outputBuf.WriteString("ERROR: " + err.Error() + "\n")
+		}
+	}
+
 	site, err := s.siteRepo.GetByID(ctx, siteID)
 	if err != nil {
+		finishLog("failed", "ERROR: "+err.Error())
 		return err
 	}
 
 	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
 	if err != nil {
+		finishLog("failed", "ERROR: "+err.Error())
 		return err
 	}
 
 	if err := lifecycle.EnsureSiteTransition(site.Status, "deploying"); err != nil {
+		finishLog("failed", "ERROR: "+err.Error())
 		return err
 	}
 	prev := site.Status
 	site.Status = "deploying"
 	if err := s.siteRepo.Update(ctx, site); err != nil {
+		finishLog("failed", "ERROR: "+err.Error())
 		return err
 	}
 	s.writeAudit("site", site.ID, prev, site.Status, "deploy_started", TaskDeploySite)
 
 	if err := s.firewall.EnsureDefaultRules(ctx, server.Host); err != nil {
+		appendOutput("firewall:ensure_default_rules", "", err)
 		if transitionErr := lifecycle.EnsureSiteTransition(site.Status, "deploy_failed"); transitionErr != nil {
+			finishLog("failed", "")
 			return transitionErr
 		}
 		prevFailed := site.Status
 		site.Status = "deploy_failed"
 		if updateErr := s.siteRepo.Update(ctx, site); updateErr != nil {
+			finishLog("failed", "")
 			return updateErr
 		}
 		s.writeAudit("site", site.ID, prevFailed, site.Status, "deploy_failed_firewall", TaskDeploySite)
+		finishLog("failed", "")
 		return err
 	}
 
 	appPort := derivePort(site.ID)
 	baseDir := fmt.Sprintf("/opt/ventopanel/sites/%s", site.ID)
-
 	composeContent := composeTemplate(site, appPort)
 	nginxContent := nginxTemplate(site.Domain, appPort)
 
-	commands := []string{
-		fmt.Sprintf("mkdir -p %s", baseDir),
-		fmt.Sprintf("cat > %s/docker-compose.yml <<'EOF'\n%s\nEOF", baseDir, composeContent),
-		fmt.Sprintf("docker compose -f %s/docker-compose.yml up -d", baseDir),
-		fmt.Sprintf("cat > /etc/nginx/sites-available/vento_%s.conf <<'EOF'\n%s\nEOF", site.ID, nginxContent),
-		fmt.Sprintf("ln -sfn /etc/nginx/sites-available/vento_%s.conf /etc/nginx/sites-enabled/vento_%s.conf", site.ID, site.ID),
-		"nginx -t",
-		"systemctl reload nginx",
+	commands := []struct{ name, cmd string }{
+		{"mkdir", fmt.Sprintf("mkdir -p %s", baseDir)},
+		{"write_compose", fmt.Sprintf("cat > %s/docker-compose.yml <<'EOF'\n%s\nEOF", baseDir, composeContent)},
+		{"docker_up", fmt.Sprintf("docker compose -f %s/docker-compose.yml up -d", baseDir)},
+		{"write_nginx", fmt.Sprintf("cat > /etc/nginx/sites-available/vento_%s.conf <<'EOF'\n%s\nEOF", site.ID, nginxContent)},
+		{"link_nginx", fmt.Sprintf("ln -sfn /etc/nginx/sites-available/vento_%s.conf /etc/nginx/sites-enabled/vento_%s.conf", site.ID, site.ID)},
+		{"nginx_test", "nginx -t"},
+		{"nginx_reload", "systemctl reload nginx"},
 	}
 
-	if err := s.ssh.RunScript(ctx, *server, commands); err != nil {
+	var deployErr error
+	for _, step := range commands {
+		out, err := s.ssh.RunOutput(ctx, *server, step.cmd)
+		appendOutput(step.name, out, err)
+		if err != nil {
+			deployErr = err
+			break
+		}
+	}
+
+	if deployErr != nil {
 		if transitionErr := lifecycle.EnsureSiteTransition(site.Status, "deploy_failed"); transitionErr != nil {
+			finishLog("failed", "")
 			return transitionErr
 		}
 		prevFailed := site.Status
 		site.Status = "deploy_failed"
 		if updateErr := s.siteRepo.Update(ctx, site); updateErr != nil {
+			finishLog("failed", "")
 			return updateErr
 		}
 		s.writeAudit("site", site.ID, prevFailed, site.Status, "deploy_failed_runtime", TaskDeploySite)
-		return err
+		finishLog("failed", "")
+		return deployErr
 	}
 
 	if err := s.ssl.IssueCertificate(ctx, *server, site.Domain); err != nil {
+		appendOutput("ssl_issue", "", err)
 		if transitionErr := lifecycle.EnsureSiteTransition(site.Status, "ssl_pending"); transitionErr != nil {
+			finishLog("failed", "")
 			return transitionErr
 		}
 		prevSSL := site.Status
 		site.Status = "ssl_pending"
 		if updateErr := s.siteRepo.Update(ctx, site); updateErr != nil {
+			finishLog("failed", "")
 			return updateErr
 		}
 		s.writeAudit("site", site.ID, prevSSL, site.Status, "deploy_ssl_pending", TaskDeploySite)
 		if s.sslQueue != nil {
 			_ = s.sslQueue.EnqueueIssue(ctx, site.ID)
 		}
+		finishLog("success", "")
 		return nil
 	}
 
+	appendOutput("ssl_issue", "certificate issued", nil)
+
 	if err := lifecycle.EnsureSiteTransition(site.Status, "deployed"); err != nil {
+		finishLog("failed", "ERROR: "+err.Error())
 		return err
 	}
 	prevDeployed := site.Status
 	site.Status = "deployed"
 	if err := s.siteRepo.Update(ctx, site); err != nil {
+		finishLog("failed", "ERROR: "+err.Error())
 		return err
 	}
 	s.writeAudit("site", site.ID, prevDeployed, site.Status, "deploy_success", TaskDeploySite)
+	finishLog("success", "")
 	return nil
 }
 

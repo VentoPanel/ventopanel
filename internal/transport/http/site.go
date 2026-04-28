@@ -3,12 +3,14 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	domain "github.com/your-org/ventopanel/internal/domain/site"
+	"github.com/your-org/ventopanel/internal/domain/tasklog"
 	"github.com/your-org/ventopanel/internal/infra/metrics"
 	deploysvc "github.com/your-org/ventopanel/internal/service/deploy"
 	sitesvc "github.com/your-org/ventopanel/internal/service/site"
@@ -20,6 +22,7 @@ type SiteHandler struct {
 	deployService *deploysvc.Service
 	teamService   *teamsvc.Service
 	auditWriter   auditdomain.StatusEventWriter
+	taskLogRepo   tasklog.Repository
 }
 
 func (h *SiteHandler) recordDenied(teamID, siteID, reason string) {
@@ -82,12 +85,14 @@ func NewSiteHandler(
 	deployService *deploysvc.Service,
 	teamService *teamsvc.Service,
 	auditWriter auditdomain.StatusEventWriter,
+	taskLogRepo tasklog.Repository,
 ) *SiteHandler {
 	return &SiteHandler{
 		service:       service,
 		deployService: deployService,
 		teamService:   teamService,
 		auditWriter:   auditWriter,
+		taskLogRepo:   taskLogRepo,
 	}
 }
 
@@ -245,4 +250,32 @@ func (h *SiteHandler) Deploy(c *gin.Context) {
 		"status":  "queued",
 		"site_id": c.Param("id"),
 	})
+}
+
+func (h *SiteHandler) GetLogs(c *gin.Context) {
+	if !h.authorizeSite(c, c.Param("id"), false) {
+		return
+	}
+
+	limit := 20
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+
+	if h.taskLogRepo == nil {
+		c.JSON(http.StatusOK, gin.H{"items": []struct{}{}})
+		return
+	}
+
+	logs, err := h.taskLogRepo.ListBySiteID(c.Request.Context(), c.Param("id"), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	if logs == nil {
+		logs = []tasklog.TaskLog{}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": logs})
 }

@@ -21,6 +21,7 @@ type ServerRepository interface {
 type SSHExecutor interface {
 	Run(ctx context.Context, server serverdomain.Server, command string) error
 	RunScript(ctx context.Context, server serverdomain.Server, commands []string) error
+	RunOutput(ctx context.Context, server serverdomain.Server, command string) (string, error)
 }
 
 type FirewallManager interface {

@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.17 - 2026-04-28
+
+### Added
+
+- `task_logs` table (migration 000006): `id`, `site_id`, `task_type`, `status`, `output text`, `started_at`, `finished_at`.
+- `domain/tasklog` package with `TaskLog` struct and `Repository` interface (`Create`, `Finish`, `ListBySiteID`).
+- `TaskLogRepository` in `repository/postgres` implementing the interface.
+- `deploy.Service` now captures stdout/stderr of each SSH deploy step individually (using `RunOutput`) and writes a `task_logs` record on start/finish.
+- `RunOutput` added to `domain/deploy.SSHExecutor` interface.
+- `GET /api/v1/sites/:id/logs?limit=N` — returns last N deploy log entries for a site.
+- Frontend: **Deploy Logs** section on the site detail page:
+  - List of deploy runs with status (success/failed/running), relative timestamp, and duration.
+  - Click to expand — shows full SSH command output in a mono pre block.
+  - Color-coded: green for success, red for failed, blue for running.
+  - Auto-refreshes every 15 s alongside the rest of the page.
+
 ## v0.1.16 - 2026-04-28
 
 ### Added

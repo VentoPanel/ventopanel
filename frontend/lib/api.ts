@@ -275,3 +275,18 @@ export async function deploySite(id: string): Promise<{ status: string }> {
     method: "POST",
   });
 }
+
+export interface TaskLog {
+  ID: string;
+  SiteID: string;
+  TaskType: string;
+  Status: string;
+  Output: string;
+  StartedAt: string;
+  FinishedAt: string | null;
+}
+
+export async function fetchSiteLogs(id: string, limit = 20): Promise<TaskLog[]> {
+  const data = await apiFetch<{ items: TaskLog[] }>(`/sites/${id}/logs?limit=${limit}`);
+  return data.items ?? [];
+}

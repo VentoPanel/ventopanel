@@ -40,6 +40,7 @@ func RegisterRoutes(
 		api.PUT("/sites/:id", siteHandler.Update)
 		api.DELETE("/sites/:id", siteHandler.Delete)
 		api.POST("/sites/:id/deploy", siteHandler.Deploy)
+		api.GET("/sites/:id/logs", siteHandler.GetLogs)
 		api.GET("/teams/access", teamHandler.List)
 		api.GET("/observability/ssl", observabilityHandler.SSL)
 		api.GET("/audit/status-events", auditHandler.ListStatusEvents)

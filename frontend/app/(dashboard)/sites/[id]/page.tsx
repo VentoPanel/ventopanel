@@ -10,9 +10,12 @@ import {
   Trash2,
   ExternalLink,
   Clock,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchSiteByID } from "@/lib/api";
+import { fetchSiteByID, fetchSiteLogs, type TaskLog } from "@/lib/api";
 import { useAuditEvents } from "@/hooks/use-audit";
 import { useDeploySite, useDeleteSite } from "@/hooks/use-site-mutations";
 import { Badge } from "@/components/ui/badge";
@@ -88,11 +91,19 @@ export default function SiteDetailPage({
   } = useAuditEvents({ resource_type: "site", resource_id: id });
   const events = auditData?.pages.flatMap((p) => p.items) ?? [];
 
+  const { data: logs = [], isFetching: logsFetching } = useQuery({
+    queryKey: ["site-logs", id],
+    queryFn: () => fetchSiteLogs(id, 20),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
+
   const deploySite = useDeploySite();
   const deleteSite = useDeleteSite();
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
 
   async function handleDeploy() {
     try {
@@ -158,6 +169,7 @@ export default function SiteDetailPage({
             onRefresh={() => {
               qc.invalidateQueries({ queryKey: ["site", id] });
               qc.invalidateQueries({ queryKey: ["audit"] });
+              qc.invalidateQueries({ queryKey: ["site-logs", id] });
             }}
           />
           <Button
@@ -236,6 +248,76 @@ export default function SiteDetailPage({
           </Card>
         </div>
       )}
+
+      {/* Deploy Logs */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Deploy Logs</h3>
+          <span className="text-xs text-muted-foreground">
+            {logsFetching ? "Refreshing…" : `${logs.length} runs`}
+          </span>
+        </div>
+
+        {logs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No deploy runs yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {logs.map((log: TaskLog) => {
+              const isExpanded = expandedLog === log.ID;
+              const statusColor =
+                log.Status === "success"
+                  ? "text-green-700 bg-green-50 border-green-200"
+                  : log.Status === "failed"
+                    ? "text-red-700 bg-red-50 border-red-200"
+                    : "text-blue-700 bg-blue-50 border-blue-200";
+              return (
+                <div key={log.ID} className={cn("rounded-md border", statusColor)}>
+                  <button
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm"
+                    onClick={() => setExpandedLog(isExpanded ? null : log.ID)}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span className="font-medium capitalize">{log.Status}</span>
+                    <span className="font-mono text-xs opacity-60">
+                      {log.ID.slice(0, 8)}
+                    </span>
+                    <span className="ml-auto text-xs opacity-70">
+                      {formatDistanceToNow(new Date(log.StartedAt), {
+                        addSuffix: true,
+                      })}
+                      {log.FinishedAt && (
+                        <span className="ml-1 opacity-70">
+                          ·{" "}
+                          {Math.round(
+                            (new Date(log.FinishedAt).getTime() -
+                              new Date(log.StartedAt).getTime()) /
+                              1000,
+                          )}
+                          s
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  {isExpanded && log.Output && (
+                    <pre className="overflow-x-auto border-t bg-black/5 px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+                      {log.Output}
+                    </pre>
+                  )}
+                  {isExpanded && !log.Output && (
+                    <p className="border-t px-4 py-2 text-xs opacity-60">
+                      No output captured.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Audit history */}
       <div>

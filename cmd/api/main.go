@@ -78,6 +78,7 @@ func main() {
 	teamRepo := postgresrepo.NewTeamRepository(pgPool)
 	userRepo := postgresrepo.NewUserRepository(pgPool)
 	statusEventRepo := postgresrepo.NewStatusEventRepository(pgPool)
+	taskLogRepo := postgresrepo.NewTaskLogRepository(pgPool)
 
 	sshExecutor := ssh.NewExecutor(cfg.SSHDialTimeout)
 	lockManager := ilock.NewRedisLockManager(redisClient)
@@ -96,11 +97,11 @@ func main() {
 	teamService := teamsvc.NewService(teamRepo)
 	auditService := auditsvc.NewService(statusEventRepo)
 	sslService := sslsvc.NewService(siteRepo, serverRepo, sslManager, asynqClient, lockManager, statusEventRepo)
-	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo)
+	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo)
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -143,6 +144,7 @@ func buildRouter(
 	sslService *sslsvc.Service,
 	auditService *auditsvc.Service,
 	statusEventRepo *postgresrepo.StatusEventRepository,
+	taskLogRepo *postgresrepo.TaskLogRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -164,7 +166,7 @@ func buildRouter(
 	devAuthHandler := httptransport.NewDevAuthHandler(cfg.AppEnv == "development", cfg.AuthJWTSecret)
 	authHandler := httptransport.NewAuthHandler(authService)
 	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService, statusEventRepo)
-	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService, statusEventRepo)
+	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService, statusEventRepo, taskLogRepo)
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)
 	auditHandler := httptransport.NewAuditHandler(auditService)
