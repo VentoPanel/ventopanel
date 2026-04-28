@@ -49,6 +49,11 @@ func main() {
 	}
 	defer pgPool.Close()
 
+	if err := db.RunMigrations(cfg.PostgresDSN, "migrations"); err != nil {
+		logger.Fatal().Err(err).Msg("failed to run database migrations")
+	}
+	logger.Info().Msg("database migrations applied")
+
 	redisClient := db.NewRedis(cfg.RedisAddr, cfg.RedisDB)
 	defer func() {
 		if err := redisClient.Close(); err != nil {
