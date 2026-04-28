@@ -20,6 +20,14 @@ make compose-up
 make run
 ```
 
+In development mode, you can mint a local JWT for testing:
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/dev/token" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"dev-user","team_id":"dev-team","ttl_seconds":3600}'
+```
+
 ## CI
 
 - Workflow file: `.github/workflows/ci.yml`

@@ -45,3 +45,9 @@ type listResponse[T any] struct {
 type errorResponse struct {
 	Error string `json:"error"`
 }
+
+type devTokenRequest struct {
+	UserID string `json:"user_id" binding:"required"`
+	TeamID string `json:"team_id" binding:"required"`
+	TTL    int64  `json:"ttl_seconds"`
+}

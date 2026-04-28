@@ -142,13 +142,14 @@ func buildRouter(
 
 	healthHandler := httptransport.NewHealthHandler()
 	metricsHandler := httptransport.NewMetricsHandler()
+	devAuthHandler := httptransport.NewDevAuthHandler(cfg.AppEnv == "development", cfg.AuthJWTSecret)
 	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService)
 	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService)
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)
 	auditHandler := httptransport.NewAuditHandler(auditService)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler)
 
 	return engine
 }

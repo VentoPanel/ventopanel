@@ -6,6 +6,7 @@ func RegisterRoutes(
 	engine *gin.Engine,
 	healthHandler *HealthHandler,
 	metricsHandler *MetricsHandler,
+	devAuthHandler *DevAuthHandler,
 	serverHandler *ServerHandler,
 	siteHandler *SiteHandler,
 	teamHandler *TeamHandler,
@@ -17,6 +18,9 @@ func RegisterRoutes(
 	api := engine.Group("/api/v1")
 	{
 		api.GET("/health", healthHandler.Get)
+		if devAuthHandler != nil {
+			api.POST("/dev/token", devAuthHandler.IssueToken)
+		}
 		api.POST("/servers", serverHandler.Create)
 		api.GET("/servers", serverHandler.List)
 		api.GET("/servers/:id", serverHandler.GetByID)
