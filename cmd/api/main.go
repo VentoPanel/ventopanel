@@ -21,6 +21,7 @@ import (
 	"github.com/your-org/ventopanel/internal/infra/ssh"
 	postgresrepo "github.com/your-org/ventopanel/internal/repository/postgres"
 	alertsvc "github.com/your-org/ventopanel/internal/service/alert"
+	authsvc "github.com/your-org/ventopanel/internal/service/auth"
 	auditsvc "github.com/your-org/ventopanel/internal/service/audit"
 	deploysvc "github.com/your-org/ventopanel/internal/service/deploy"
 	provisionsvc "github.com/your-org/ventopanel/internal/service/provision"
@@ -70,6 +71,7 @@ func main() {
 	serverRepo := postgresrepo.NewServerRepository(pgPool, encryptor)
 	siteRepo := postgresrepo.NewSiteRepository(pgPool)
 	teamRepo := postgresrepo.NewTeamRepository(pgPool)
+	userRepo := postgresrepo.NewUserRepository(pgPool)
 	statusEventRepo := postgresrepo.NewStatusEventRepository(pgPool)
 
 	sshExecutor := ssh.NewExecutor(cfg.SSHDialTimeout)
@@ -79,6 +81,11 @@ func main() {
 	telegramNotifier := notifier.NewTelegram(cfg.TelegramBotToken, cfg.TelegramChatID)
 	whatsAppNotifier := notifier.NewWhatsApp(cfg.WhatsAppWebhookURL)
 
+	authService := authsvc.NewService(
+		userRepo,
+		cfg.AuthJWTSecret, cfg.AuthJWTIssuer, cfg.AuthJWTAudience,
+		12*time.Hour,
+	)
 	serverService := serversvc.NewService(serverRepo, sshExecutor, statusEventRepo)
 	siteService := sitesvc.NewService(siteRepo, serverRepo)
 	teamService := teamsvc.NewService(teamRepo)
@@ -88,7 +95,7 @@ func main() {
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier)
 
-	engine := buildRouter(cfg, logger, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -122,6 +129,7 @@ func main() {
 func buildRouter(
 	cfg *config.Config,
 	logger ilogger.Logger,
+	authService *authsvc.Service,
 	serverService *serversvc.Service,
 	siteService *sitesvc.Service,
 	teamService *teamsvc.Service,
@@ -149,13 +157,14 @@ func buildRouter(
 	healthHandler := httptransport.NewHealthHandler()
 	metricsHandler := httptransport.NewMetricsHandler()
 	devAuthHandler := httptransport.NewDevAuthHandler(cfg.AppEnv == "development", cfg.AuthJWTSecret)
+	authHandler := httptransport.NewAuthHandler(authService)
 	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService, statusEventRepo)
 	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService, statusEventRepo)
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)
 	auditHandler := httptransport.NewAuditHandler(auditService)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler)
 
 	return engine
 }
