@@ -344,6 +344,23 @@ export async function deploySite(id: string): Promise<{ status: string }> {
   });
 }
 
+export interface SSLCertInfo {
+  domain: string;
+  expires_at: string;
+  days_left: number;
+  status: "valid" | "expiring_soon" | "expired" | "no_cert";
+}
+
+export async function fetchSiteSSL(id: string): Promise<SSLCertInfo> {
+  return apiFetch<SSLCertInfo>(`/sites/${id}/ssl`);
+}
+
+export async function renewSiteSSL(id: string): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(`/sites/${id}/ssl/renew`, {
+    method: "POST",
+  });
+}
+
 export interface TaskLog {
   ID: string;
   SiteID: string;

@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.21 - 2026-04-28
+
+### Added
+
+- `ssl.Service.GetCertInfo(ctx, siteID)` — SSHes into the site's server and runs `openssl x509 -enddate` on the Let's Encrypt certificate. Returns `{domain, expires_at, days_left, status}` where status is `valid | expiring_soon | expired | no_cert`.
+- `ssl.Service.WithSSH(executor)` — injects the SSH executor into the SSL service without changing the constructor signature.
+- `GET /api/v1/sites/:id/ssl` — returns `SSLCertInfo` for the site.
+- `POST /api/v1/sites/:id/ssl/renew` — queues a per-site SSL issue/renew task.
+- Frontend: **SSL Certificate** card on the site detail page:
+  - Color-coded left border: green (valid), yellow (expiring ≤ 30 days), red (expired/no cert).
+  - Shows status, expiry date, and days remaining.
+  - Days count turns yellow ≤ 30, red ≤ 14.
+  - **Renew** button (visible for admin/editor) triggers `POST /sites/:id/ssl/renew`.
+
 ## v0.1.20 - 2026-04-28
 
 ### Added

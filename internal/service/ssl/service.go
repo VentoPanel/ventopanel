@@ -23,10 +23,19 @@ const TaskRenewSSL = "ssl:renew"
 
 var ErrQueueUnavailable = errors.New("ssl queue client is not configured")
 
+// SSLCertInfo holds certificate expiry information for a site.
+type SSLCertInfo struct {
+	Domain    string    `json:"domain"`
+	ExpiresAt time.Time `json:"expires_at"`
+	DaysLeft  int       `json:"days_left"`
+	Status    string    `json:"status"` // valid | expiring_soon | expired | no_cert
+}
+
 type Service struct {
 	siteRepo   deploydomain.SiteRepository
 	serverRepo deploydomain.ServerRepository
 	ssl        deploydomain.SSLManager
+	ssh        deploydomain.SSHExecutor
 	client     *asynq.Client
 	lock       lockManager
 	audit      auditdomain.StatusEventWriter
@@ -74,6 +83,61 @@ func NewService(
 		lock:       lock,
 		audit:      audit,
 	}
+}
+
+// WithSSH enables certificate info lookups via SSH.
+func (s *Service) WithSSH(executor deploydomain.SSHExecutor) *Service {
+	s.ssh = executor
+	return s
+}
+
+// GetCertInfo fetches SSL certificate expiry for the given site via SSH.
+func (s *Service) GetCertInfo(ctx context.Context, siteID string) (*SSLCertInfo, error) {
+	site, err := s.siteRepo.GetByID(ctx, siteID)
+	if err != nil {
+		return nil, err
+	}
+
+	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
+	if err != nil {
+		return nil, err
+	}
+
+	info := &SSLCertInfo{Domain: site.Domain, Status: "no_cert"}
+
+	if s.ssh == nil {
+		return info, nil
+	}
+
+	cmd := "openssl x509 -enddate -noout -in /etc/letsencrypt/live/" + site.Domain + "/fullchain.pem 2>/dev/null || echo no_cert"
+	out, err := s.ssh.RunOutput(ctx, *server, cmd)
+	if err != nil || strings.TrimSpace(out) == "no_cert" || out == "" {
+		return info, nil
+	}
+
+	// Output format: "notAfter=May 28 12:00:00 2026 GMT"
+	out = strings.TrimSpace(out)
+	out = strings.TrimPrefix(out, "notAfter=")
+	expiry, err := time.Parse("Jan _2 15:04:05 2006 MST", out)
+	if err != nil {
+		expiry, err = time.Parse("Jan  2 15:04:05 2006 MST", out)
+	}
+	if err != nil {
+		return info, nil
+	}
+
+	info.ExpiresAt = expiry
+	info.DaysLeft = int(time.Until(expiry).Hours() / 24)
+	switch {
+	case info.DaysLeft < 0:
+		info.Status = "expired"
+	case info.DaysLeft <= 30:
+		info.Status = "expiring_soon"
+	default:
+		info.Status = "valid"
+	}
+
+	return info, nil
 }
 
 func (s *Service) EnqueueIssue(ctx context.Context, siteID string) error {

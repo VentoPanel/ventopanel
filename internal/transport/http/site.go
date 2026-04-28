@@ -14,6 +14,7 @@ import (
 	"github.com/your-org/ventopanel/internal/infra/metrics"
 	deploysvc "github.com/your-org/ventopanel/internal/service/deploy"
 	sitesvc "github.com/your-org/ventopanel/internal/service/site"
+	sslsvc "github.com/your-org/ventopanel/internal/service/ssl"
 	teamsvc "github.com/your-org/ventopanel/internal/service/team"
 )
 
@@ -23,6 +24,7 @@ type SiteHandler struct {
 	teamService   *teamsvc.Service
 	auditWriter   auditdomain.StatusEventWriter
 	taskLogRepo   tasklog.Repository
+	sslService    *sslsvc.Service
 }
 
 func (h *SiteHandler) recordDenied(teamID, siteID, reason string) {
@@ -86,6 +88,7 @@ func NewSiteHandler(
 	teamService *teamsvc.Service,
 	auditWriter auditdomain.StatusEventWriter,
 	taskLogRepo tasklog.Repository,
+	sslService *sslsvc.Service,
 ) *SiteHandler {
 	return &SiteHandler{
 		service:       service,
@@ -93,6 +96,7 @@ func NewSiteHandler(
 		teamService:   teamService,
 		auditWriter:   auditWriter,
 		taskLogRepo:   taskLogRepo,
+		sslService:    sslService,
 	}
 }
 
@@ -250,6 +254,41 @@ func (h *SiteHandler) Deploy(c *gin.Context) {
 		"status":  "queued",
 		"site_id": c.Param("id"),
 	})
+}
+
+func (h *SiteHandler) GetSSLInfo(c *gin.Context) {
+	if !h.authorizeSite(c, c.Param("id"), false) {
+		return
+	}
+
+	if h.sslService == nil {
+		c.JSON(http.StatusOK, gin.H{"status": "no_cert"})
+		return
+	}
+
+	info, err := h.sslService.GetCertInfo(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, info)
+}
+
+func (h *SiteHandler) RenewSSL(c *gin.Context) {
+	if !h.authorizeSite(c, c.Param("id"), true) {
+		return
+	}
+
+	if h.sslService == nil {
+		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "ssl service not configured"})
+		return
+	}
+
+	if err := h.sslService.EnqueueIssue(c.Request.Context(), c.Param("id")); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"status": "queued", "site_id": c.Param("id")})
 }
 
 func (h *SiteHandler) GetLogs(c *gin.Context) {
