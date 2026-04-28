@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.15 - 2026-04-28
+
+### Added
+
+- `isTokenValid()` in `lib/api.ts`: decodes JWT expiry from payload and returns `false` if the token is absent or expired, preventing stale tokens from being silently accepted.
+- Dashboard layout now calls `isTokenValid()` instead of `getToken()`, so an expired token triggers an immediate redirect to `/login`.
+- `apiFetch` calls `clearToken()` before redirecting on 401/403, ensuring the stale token is removed and the user is not left with an invalid session.
+
+### Fixed
+
+- JWT claim mismatch: auth service was issuing `sub`/`team_id` but the middleware `Claims` struct only parsed `uid`/`tid`. `issueToken` now emits `uid` + `tid`.
+- Added `TeamIDLegacy json:"team_id"` fallback field in `Claims` so manually-minted tokens (Python scripts, old tooling) continue to work.
+
 ## v0.1.14 - 2026-04-28
 
 ### Added

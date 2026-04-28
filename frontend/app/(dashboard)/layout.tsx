@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getToken } from "@/lib/api";
+import { isTokenValid } from "@/lib/api";
 import { Nav } from "@/components/nav";
 
 export default function DashboardLayout({
@@ -13,7 +13,7 @@ export default function DashboardLayout({
   const router = useRouter();
 
   useEffect(() => {
-    if (!getToken()) {
+    if (!isTokenValid()) {
       router.replace("/login");
     }
   }, [router]);

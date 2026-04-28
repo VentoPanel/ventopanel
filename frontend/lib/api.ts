@@ -13,6 +13,18 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+export function isTokenValid(): boolean {
+  if (typeof window === "undefined") return false;
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return false;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return typeof payload.exp === "number" && payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
+}
+
 export interface Server {
   ID: string;
   Name: string;
@@ -86,6 +98,7 @@ async function apiFetch<T>(
   const res = await fetch(`/api/v1${path}`, { ...options, headers });
 
   if (res.status === 401 || res.status === 403) {
+    clearToken();
     if (typeof window !== "undefined") {
       window.location.href = "/login";
     }
