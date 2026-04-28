@@ -138,6 +138,7 @@ func buildRouter(
 	engine.Use(gin.Recovery())
 	engine.Use(httptransport.RequestIDMiddleware())
 	engine.Use(httptransport.LoggerMiddleware(logger))
+	engine.Use(httptransport.AuthContextMiddleware(cfg.AuthJWTSecret, cfg.AuthAllowHeaders))
 
 	healthHandler := httptransport.NewHealthHandler()
 	metricsHandler := httptransport.NewMetricsHandler()

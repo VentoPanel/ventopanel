@@ -34,9 +34,8 @@ func (h *ServerHandler) authorizeServer(c *gin.Context, serverID string, require
 		return true
 	}
 
-	teamID := strings.TrimSpace(c.GetHeader("X-Team-ID"))
-	if teamID == "" {
-		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden: missing X-Team-ID"})
+	teamID, ok := requireTeamID(c)
+	if !ok {
 		return false
 	}
 

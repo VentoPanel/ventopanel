@@ -20,9 +20,8 @@ type SiteHandler struct {
 }
 
 func (h *SiteHandler) authorizeSite(c *gin.Context, siteID string, requireWrite bool) bool {
-	teamID := strings.TrimSpace(c.GetHeader("X-Team-ID"))
-	if teamID == "" {
-		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden: missing X-Team-ID"})
+	teamID, ok := requireTeamID(c)
+	if !ok {
 		return false
 	}
 

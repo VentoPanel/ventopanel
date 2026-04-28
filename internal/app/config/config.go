@@ -20,6 +20,8 @@ type Config struct {
 	TelegramBotToken   string        `env:"TELEGRAM_BOT_TOKEN"`
 	TelegramChatID     string        `env:"TELEGRAM_CHAT_ID"`
 	WhatsAppWebhookURL string        `env:"WHATSAPP_WEBHOOK_URL"`
+	AuthJWTSecret      string        `env:"AUTH_JWT_SECRET" env-default:"dev-insecure-change-me"`
+	AuthAllowHeaders   bool          `env:"AUTH_ALLOW_HEADER_FALLBACK" env-default:"true"`
 }
 
 func Load() (*Config, error) {

@@ -32,6 +32,8 @@ make run
 Important security variable:
 
 - `APP_ENCRYPTION_KEY` must be 32 bytes. It is used to encrypt SSH passwords at rest.
+- `AUTH_JWT_SECRET` secures JWT parsing in HTTP middleware. Change default value in non-dev environments.
+- Production recommendation: set `AUTH_ALLOW_HEADER_FALLBACK=false` to require JWT-derived identity and disable header trust fallback.
 
 ## Monitoring (Prometheus + Grafana)
 
