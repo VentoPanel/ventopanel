@@ -19,10 +19,19 @@ func (s *Service) GetSiteRole(ctx context.Context, teamID, siteID string) (strin
 	return s.repo.GetSiteRole(ctx, teamID, siteID)
 }
 
+
 func (s *Service) HasServerAccess(ctx context.Context, teamID, serverID string) (bool, error) {
 	return s.repo.HasServerAccess(ctx, teamID, serverID)
 }
 
 func (s *Service) GetServerRole(ctx context.Context, teamID, serverID string) (string, error) {
 	return s.repo.GetServerRole(ctx, teamID, serverID)
+}
+
+func (s *Service) GrantServerAccess(ctx context.Context, teamID, serverID, role string) error {
+	return s.repo.GrantServerAccess(ctx, teamID, serverID, role)
+}
+
+func (s *Service) GrantSiteAccess(ctx context.Context, teamID, siteID, role string) error {
+	return s.repo.GrantSiteAccess(ctx, teamID, siteID, role)
 }

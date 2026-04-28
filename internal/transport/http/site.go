@@ -125,6 +125,11 @@ func (h *SiteHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Grant the creating team owner access so the site appears in their list.
+	if teamID, ok := TeamIDFromRequest(c); ok && teamID != "" {
+		_ = h.teamService.GrantSiteAccess(c.Request.Context(), teamID, site.ID, "owner")
+	}
+
 	c.JSON(http.StatusCreated, site)
 }
 

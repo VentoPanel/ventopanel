@@ -133,6 +133,13 @@ func (h *ServerHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Grant the creating team owner access so the server appears in their list.
+	if h.teamService != nil {
+		if teamID, ok := TeamIDFromRequest(c); ok && teamID != "" {
+			_ = h.teamService.GrantServerAccess(c.Request.Context(), teamID, server.ID, "owner")
+		}
+	}
+
 	c.JSON(http.StatusCreated, server)
 }
 
