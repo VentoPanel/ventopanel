@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.11 - 2026-04-28
+
+### Added
+
+- `/audit` page in the frontend: table of all status-change events with resource type, from/to status badges, reason, and timestamps.
+- Color-coded status badges: red for failures/denied, green for success, blue for in-progress states.
+- Filter by resource type (All / Server / Site).
+- Cursor-based "Load more" pagination via TanStack Query `useInfiniteQuery`.
+- "Audit Log" link added to the sidebar navigation.
+
 ## v0.1.10 - 2026-04-28
 
 ### Added

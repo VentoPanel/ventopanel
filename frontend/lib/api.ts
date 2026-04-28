@@ -104,6 +104,38 @@ async function apiFetch<T>(
   return res.json() as Promise<T>;
 }
 
+// Audit
+export interface AuditEvent {
+  ID: string;
+  ResourceType: string;
+  ResourceID: string;
+  FromStatus: string;
+  ToStatus: string;
+  Reason: string;
+  TaskID: string;
+  CreatedAt: string;
+}
+
+export interface AuditPage {
+  items: AuditEvent[];
+  next_cursor: string;
+}
+
+export async function fetchAuditEvents(params: {
+  resource_type?: string;
+  resource_id?: string;
+  limit?: number;
+  before?: string;
+}): Promise<AuditPage> {
+  const qs = new URLSearchParams();
+  if (params.resource_type) qs.set("resource_type", params.resource_type);
+  if (params.resource_id) qs.set("resource_id", params.resource_id);
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.before) qs.set("before", params.before);
+
+  return apiFetch<AuditPage>(`/audit?${qs.toString()}`);
+}
+
 // Servers
 export async function fetchServers(): Promise<Server[]> {
   const data = await apiFetch<ListResponse<Server>>("/servers");
