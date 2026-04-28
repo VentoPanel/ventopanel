@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.6 - 2026-04-28
+
+### Added
+
+- Added `make smoke-prod-auth SITE_ID=<id>` to automate production auth smoke checks: health endpoint, ACL deny request, ACL deny metrics, and `status_events` audit verification.
+- Documented the new Makefile shortcut in `OPERATIONS.md` for repeatable post-release verification on servers.
+
 ## v0.1.5 - 2026-04-28
 
 ### Added

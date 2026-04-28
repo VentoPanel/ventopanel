@@ -85,6 +85,13 @@ docker compose \
    LIMIT 10;"
 ```
 
+Shortcut via Makefile (v0.1.6+):
+
+```bash
+cd /root/ventopanel
+make smoke-prod-auth SITE_ID=<site_id_without_grant>
+```
+
 Security sanity in production mode:
 
 ```bash
