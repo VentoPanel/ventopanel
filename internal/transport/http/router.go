@@ -47,6 +47,8 @@ func RegisterRoutes(
 		api.GET("/sites/:id/logs", siteHandler.GetLogs)
 		api.GET("/teams/access", teamHandler.List)
 		api.GET("/observability/ssl", observabilityHandler.SSL)
+		// Both paths resolve to the same handler for backward compatibility.
+		api.GET("/audit", auditHandler.ListStatusEvents)
 		api.GET("/audit/status-events", auditHandler.ListStatusEvents)
 		api.GET("/settings/notifications", settingsHandler.GetNotifications)
 		api.PATCH("/settings/notifications", settingsHandler.UpdateNotifications)

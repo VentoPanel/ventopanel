@@ -133,6 +133,12 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		return err
 	}
 
+	if server.Status != "ready_for_deploy" && server.Status != "deployed" {
+		msg := fmt.Sprintf("server %s is not ready (status=%s): run Provision first", server.ID, server.Status)
+		finishLog("failed", "ERROR: "+msg)
+		return fmt.Errorf(msg)
+	}
+
 	if err := lifecycle.EnsureSiteTransition(site.Status, "deploying"); err != nil {
 		finishLog("failed", "ERROR: "+err.Error())
 		return err

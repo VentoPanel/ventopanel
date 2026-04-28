@@ -48,6 +48,7 @@ func NewMux(
 		logger.Info().Str("site_id", payload.SiteID).Msg("processing deploy task")
 
 		if err := deployService.ExecuteDeploy(ctx, payload); err != nil {
+			logger.Error().Str("site_id", payload.SiteID).Err(err).Msg("deploy task failed")
 			_ = alertService.NotifyAll(ctx, fmt.Sprintf(
 				"🚨 <b>Site deploy FAILED</b>\n"+
 					"Site: <code>%s</code>\n"+
@@ -74,6 +75,7 @@ func NewMux(
 		logger.Info().Str("server_id", payload.ServerID).Msg("processing provision task")
 
 		if err := provisionService.ExecuteProvision(ctx, payload); err != nil {
+			logger.Error().Str("server_id", payload.ServerID).Err(err).Msg("provision task failed")
 			_ = alertService.NotifyAll(ctx, fmt.Sprintf(
 				"🚨 <b>Server provisioning FAILED</b>\n"+
 					"Server: <code>%s</code>\n"+
