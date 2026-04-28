@@ -274,27 +274,18 @@ func derivePort(siteID string) int {
 
 func composeTemplate(site *sitedomain.Site, appPort int) string {
 	runtime := strings.ToLower(strings.TrimSpace(site.Runtime))
+
+	// Use YAML block literal (|-) for command to avoid YAML plain-scalar
+	// restrictions (": " in content, backslash-quote confusion, etc.).
 	if strings.Contains(runtime, "php") {
-		return fmt.Sprintf(`services:
-  app:
-    image: php:8.3-fpm-alpine
-    container_name: ventopanel_%s
-    restart: unless-stopped
-    command: sh -c "printf '<?php echo \"VentoPanel PHP site: %s\"; ?>' > /var/www/html/index.php && php -S 0.0.0.0:8080 -t /var/www/html"
-    ports:
-      - "%d:8080"
-`, site.ID, site.Domain, appPort)
+		phpCmd := `printf '<?php echo "VentoPanel site"; ?>' > /var/www/html/index.php && php -S 0.0.0.0:8080 -t /var/www/html`
+		return fmt.Sprintf("services:\n  app:\n    image: php:8.3-fpm-alpine\n    container_name: ventopanel_%s\n    restart: unless-stopped\n    command:\n      - sh\n      - -c\n      - %q\n    ports:\n      - \"%d:8080\"\n",
+			site.ID, phpCmd, appPort)
 	}
 
-	return fmt.Sprintf(`services:
-  app:
-    image: node:20-alpine
-    container_name: ventopanel_%s
-    restart: unless-stopped
-    command: sh -c "printf 'const http=require(\"http\");http.createServer((req,res)=>res.end(\"VentoPanel Node site: %s\")).listen(8080);' > /app/server.js && node /app/server.js"
-    ports:
-      - "%d:8080"
-`, site.ID, site.Domain, appPort)
+	nodeCmd := `printf 'const h=require("http");h.createServer((q,r)=>r.end("VentoPanel site")).listen(8080);' > /app/server.js && node /app/server.js`
+	return fmt.Sprintf("services:\n  app:\n    image: node:20-alpine\n    container_name: ventopanel_%s\n    restart: unless-stopped\n    command:\n      - sh\n      - -c\n      - %q\n    ports:\n      - \"%d:8080\"\n",
+		site.ID, nodeCmd, appPort)
 }
 
 func nginxTemplate(domainName string, appPort int) string {
