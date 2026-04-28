@@ -60,7 +60,8 @@ func (e *Executor) RunOutput(ctx context.Context, server domain.Server, command 
 	session.Stderr = &buf
 
 	if err := session.Run(command); err != nil {
-		return "", fmt.Errorf("run remote command: %w", err)
+		// Return captured output even on failure so callers can log what went wrong.
+		return strings.TrimSpace(buf.String()), fmt.Errorf("run remote command: %w", err)
 	}
 
 	return strings.TrimSpace(buf.String()), nil

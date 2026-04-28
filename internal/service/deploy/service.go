@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -173,13 +174,17 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 	composeContent := composeTemplate(site, appPort)
 	nginxContent := nginxTemplate(site.Domain, appPort)
 
+	// Use base64-encoded writes to avoid heredoc issues over SSH exec channels.
+	composeB64 := base64.StdEncoding.EncodeToString([]byte(composeContent))
+	nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
+
 	commands := []struct{ name, cmd string }{
 		{"mkdir", fmt.Sprintf("mkdir -p %s", baseDir)},
-		{"write_compose", fmt.Sprintf("cat > %s/docker-compose.yml <<'EOF'\n%s\nEOF", baseDir, composeContent)},
-		{"docker_up", fmt.Sprintf("docker compose -f %s/docker-compose.yml up -d", baseDir)},
-		{"write_nginx", fmt.Sprintf("cat > /etc/nginx/sites-available/vento_%s.conf <<'EOF'\n%s\nEOF", site.ID, nginxContent)},
+		{"write_compose", fmt.Sprintf("echo %s | base64 -d > %s/docker-compose.yml", composeB64, baseDir)},
+		{"docker_up", fmt.Sprintf("docker compose -f %s/docker-compose.yml up -d --pull missing 2>&1", baseDir)},
+		{"write_nginx", fmt.Sprintf("echo %s | base64 -d > /etc/nginx/sites-available/vento_%s.conf", nginxB64, site.ID)},
 		{"link_nginx", fmt.Sprintf("ln -sfn /etc/nginx/sites-available/vento_%s.conf /etc/nginx/sites-enabled/vento_%s.conf", site.ID, site.ID)},
-		{"nginx_test", "nginx -t"},
+		{"nginx_test", "nginx -t 2>&1"},
 		{"nginx_reload", "systemctl reload nginx"},
 	}
 
