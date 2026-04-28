@@ -3,7 +3,7 @@ CMD_DIR := ./cmd/api
 BIN_DIR := ./bin
 BINARY := $(BIN_DIR)/$(APP_NAME)
 
-.PHONY: help deps run build test test-integration lint fmt clean compose-up compose-down monitoring-up monitoring-down monitoring-logs migrate-up migrate-down smoke-prod-auth
+.PHONY: help deps run build test test-integration lint fmt clean compose-up compose-down monitoring-up monitoring-down monitoring-logs migrate-up migrate-down smoke-prod-auth gen-jwt
 
 help:
 	@echo "Available commands:"
@@ -22,6 +22,7 @@ help:
 	@echo "  make monitoring-logs - tail monitoring stack logs"
 	@echo "  make migrate-up   - apply SQL migrations"
 	@echo "  make migrate-down - rollback one SQL migration"
+	@echo "  make gen-jwt              - mint a test JWT from .env"
 	@echo "  make smoke-prod-auth SITE_ID=<id> - run production ACL deny smoke"
 
 deps:
@@ -72,36 +73,28 @@ migrate-up:
 migrate-down:
 	migrate -path ./migrations -database "postgres://vento:vento@localhost:5432/ventopanel?sslmode=disable" down 1
 
+gen-jwt:
+	@python3 scripts/gen_jwt.py
+
 smoke-prod-auth:
-	@if [ -z "$$SITE_ID" ]; then echo "SITE_ID is required. Example:"; echo "make smoke-prod-auth SITE_ID=935778e2-57fb-44d5-a85d-e49a46b7085f"; exit 1; fi
-	@TOKEN=$$(python3 - <<'PY' \
-import json, base64, hmac, hashlib, time, pathlib; \
-def b64url(data): \
-    return base64.urlsafe_b64encode(data).rstrip(b'=').decode(); \
-env = {}; \
-for line in pathlib.Path('.env').read_text(encoding='utf-8').splitlines(): \
-    line = line.strip(); \
-    if not line or line.startswith('#') or '=' not in line: \
-        continue; \
-    k, v = line.split('=', 1); \
-    env[k.strip()] = v.strip(); \
-secret = env['AUTH_JWT_SECRET']; \
-iss = env.get('AUTH_JWT_ISSUER', ''); \
-aud = env.get('AUTH_JWT_AUDIENCE', ''); \
-now = int(time.time()); \
-header = {'alg': 'HS256', 'typ': 'JWT'}; \
-payload = {'team_id': '11111111-1111-1111-1111-111111111111', 'iss': iss, 'aud': aud, 'iat': now, 'nbf': now, 'exp': now + 3600}; \
-h = b64url(json.dumps(header, separators=(',', ':')).encode()); \
-p = b64url(json.dumps(payload, separators=(',', ':')).encode()); \
-msg = f'{h}.{p}'.encode(); \
-sig = b64url(hmac.new(secret.encode(), msg, hashlib.sha256).digest()); \
-print(f'{h}.{p}.{sig}'); \
-PY \
-	); \
-	echo "Health:"; curl -fsS http://127.0.0.1:8080/api/v1/health; echo; \
-	echo "ACL deny request (expected 403):"; \
-	curl -sS -o /tmp/acl-deny.json -w "ACL_DENY:%{http_code}\n" -H "Authorization: Bearer $$TOKEN" "http://127.0.0.1:8080/api/v1/sites/$$SITE_ID"; \
+	@if [ -z "$$SITE_ID" ]; then \
+		echo "SITE_ID is required. Example:"; \
+		echo "make smoke-prod-auth SITE_ID=935778e2-57fb-44d5-a85d-e49a46b7085f"; \
+		exit 1; \
+	fi
+	@TOKEN=$$(python3 scripts/gen_jwt.py); \
+	echo "==> Health"; \
+	curl -fsS http://127.0.0.1:8080/api/v1/health; echo; \
+	echo "==> ACL deny request (expected 403)"; \
+	curl -sS -o /tmp/acl-deny.json -w "ACL_DENY:%{http_code}\n" \
+		-H "Authorization: Bearer $$TOKEN" \
+		"http://127.0.0.1:8080/api/v1/sites/$$SITE_ID"; \
 	cat /tmp/acl-deny.json; echo; \
-	echo "ACL deny metric:"; curl -fsS http://127.0.0.1:8080/metrics | grep ventopanel_acl_denied_total; \
-	echo "Latest access_denied events:"; \
-	docker compose -f deployments/docker/docker-compose.yaml -f deployments/docker/docker-compose.override.yaml exec -T postgres psql -U vento -d ventopanel -c "SELECT resource_type, resource_id, to_status, reason, created_at FROM status_events WHERE to_status='access_denied' ORDER BY created_at DESC LIMIT 10;"
+	echo "==> ACL deny metric"; \
+	curl -fsS http://127.0.0.1:8080/metrics | grep ventopanel_acl_denied_total; \
+	echo "==> Latest access_denied audit events"; \
+	docker compose \
+		-f deployments/docker/docker-compose.yaml \
+		-f deployments/docker/docker-compose.override.yaml \
+		exec -T postgres psql -U vento -d ventopanel -c \
+		"SELECT resource_type, resource_id, to_status, reason, created_at FROM status_events WHERE to_status='access_denied' ORDER BY created_at DESC LIMIT 10;"
