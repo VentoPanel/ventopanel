@@ -14,6 +14,7 @@ func RegisterRoutes(
 	observabilityHandler *ObservabilityHandler,
 	auditHandler *AuditHandler,
 	settingsHandler *SettingsHandler,
+	userHandler *UserHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -47,5 +48,8 @@ func RegisterRoutes(
 		api.GET("/audit/status-events", auditHandler.ListStatusEvents)
 		api.GET("/settings/notifications", settingsHandler.GetNotifications)
 		api.PATCH("/settings/notifications", settingsHandler.UpdateNotifications)
+		api.GET("/users", userHandler.List)
+		api.PATCH("/users/:id/role", userHandler.UpdateRole)
+		api.DELETE("/users/:id", userHandler.Delete)
 	}
 }

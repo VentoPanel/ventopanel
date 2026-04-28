@@ -270,6 +270,31 @@ export async function deleteSite(id: string): Promise<void> {
   return apiFetch<void>(`/sites/${id}`, { method: "DELETE" });
 }
 
+// Users
+export interface User {
+  id: string;
+  email: string;
+  team_id: string;
+  role: string;
+  created_at: string;
+}
+
+export async function fetchUsers(): Promise<User[]> {
+  const data = await apiFetch<{ items: User[] }>("/users");
+  return data.items ?? [];
+}
+
+export async function updateUserRole(id: string, role: string): Promise<void> {
+  await apiFetch(`/users/${id}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  return apiFetch<void>(`/users/${id}`, { method: "DELETE" });
+}
+
 // Settings
 export interface NotificationSettings {
   telegram_bot_token: string;

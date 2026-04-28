@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.19 - 2026-04-28
+
+### Added
+
+- `UserRepository.List`, `UpdateRole`, `Delete` methods + corresponding `Repository` interface methods.
+- `GET /api/v1/users` — list all users (authenticated).
+- `PATCH /api/v1/users/:id/role` — change role (`admin` | `editor` | `viewer`).
+- `DELETE /api/v1/users/:id` — delete user; self-deletion is blocked.
+- Frontend `/users` page:
+  - Member list with email, join date ("X ago"), role badge, and inline role selector.
+  - Role badges: purple for admin, blue for editor, gray for viewer.
+  - Delete button with confirmation dialog.
+  - "Users" link added to the sidebar nav.
+
 ## v0.1.18 - 2026-04-28
 
 ### Added

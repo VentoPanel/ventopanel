@@ -34,4 +34,7 @@ type Repository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByID(ctx context.Context, id string) (*User, error)
 	Count(ctx context.Context) (int64, error)
+	List(ctx context.Context) ([]User, error)
+	UpdateRole(ctx context.Context, id, role string) error
+	Delete(ctx context.Context, id string) error
 }
