@@ -1,0 +1,24 @@
+groups:
+  - name: ventopanel-ssl
+    rules:
+      - alert: VentoPanelSSLRenewFailuresDetected
+        expr: increase(ventopanel_ssl_renew_failed_total[15m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: ventopanel
+          component: ssl
+        annotations:
+          summary: "SSL renew failures detected in VentoPanel"
+          description: "At least one SSL renew task failed during the last 15 minutes."
+
+      - alert: VentoPanelNoSuccessfulSSLRenewIn24h
+        expr: increase(ventopanel_ssl_renew_success_total[24h]) == 0
+        for: 30m
+        labels:
+          severity: critical
+          service: ventopanel
+          component: ssl
+        annotations:
+          summary: "No successful SSL renewals in the last 24h"
+          description: "No SSL renew success events were observed in VentoPanel for 24 hours."

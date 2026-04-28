@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS team_site_access;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS sites;
+DROP TABLE IF EXISTS servers;

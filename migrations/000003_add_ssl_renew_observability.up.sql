@@ -1,0 +1,3 @@
+ALTER TABLE servers
+    ADD COLUMN IF NOT EXISTS last_renew_at TIMESTAMPTZ NULL,
+    ADD COLUMN IF NOT EXISTS last_renew_status TEXT NOT NULL DEFAULT 'unknown';

@@ -1,0 +1,112 @@
+openapi: 3.0.3
+info:
+  title: VentoPanel Audit API
+  version: 1.0.0
+paths:
+  /api/v1/audit/status-events:
+    get:
+      summary: List status transition audit events
+      description: |
+        Returns status change events ordered by `created_at DESC, id DESC`.
+        Cursor pagination is supported with the `before` query parameter.
+      parameters:
+        - in: query
+          name: resource_type
+          schema:
+            type: string
+          description: Resource category (for example `server` or `site`).
+        - in: query
+          name: resource_id
+          schema:
+            type: string
+          description: Resource identifier.
+        - in: query
+          name: from
+          schema:
+            type: string
+          description: Filter by previous status value.
+        - in: query
+          name: to
+          schema:
+            type: string
+          description: Filter by next status value.
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+          description: Include events with `created_at >= since`.
+        - in: query
+          name: before
+          schema:
+            type: string
+          description: |
+            Cursor in format `<RFC3339Nano timestamp>,<event_id>`.
+            Example: `2026-04-28T10:00:00.123456789Z,8cc0a3d8-...`
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: Max number of events in page.
+        - in: query
+          name: include_total
+          schema:
+            type: boolean
+            default: false
+          description: Include `total_count` for current filters (ignores cursor).
+      responses:
+        "200":
+          description: Events list page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StatusEvent"
+                  next_cursor:
+                    type: string
+                    description: Empty when there is no next page.
+                  total_count:
+                    type: integer
+                    format: int64
+                    description: Present only when `include_total=true`.
+                required:
+                  - items
+                  - next_cursor
+        "400":
+          description: Invalid query parameters
+        "500":
+          description: Internal server error
+components:
+  schemas:
+    StatusEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        from_status:
+          type: string
+        to_status:
+          type: string
+        reason:
+          type: string
+        task_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - resource_type
+        - resource_id
+        - created_at

@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: ventopanel-postgres
+    environment:
+      POSTGRES_DB: ventopanel
+      POSTGRES_USER: vento
+      POSTGRES_PASSWORD: vento
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vento -d ventopanel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ventopanel-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    container_name: ventopanel-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      APP_NAME: VentoPanel
+      APP_ENV: development
+      HTTP_PORT: 8080
+      LOG_LEVEL: debug
+      POSTGRES_DSN: postgres://vento:vento@postgres:5432/ventopanel?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_DB: 0
+      SSH_DIAL_TIMEOUT: 10s
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
+  redis_data:
