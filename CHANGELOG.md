@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.8 - 2026-04-28
+
+### Added
+
+- Full CRUD UI for servers and sites via modal dialogs (create, edit, delete with confirmation).
+- Action buttons in tables: Connect and Provision for servers; Deploy for sites.
+- Toast notifications (Sonner) for all mutations: success and error feedback.
+- New UI primitives: `dialog`, `input`, `label` (Shadcn/Radix-based).
+- Mutation hooks: `use-server-mutations`, `use-site-mutations` (TanStack Query `useMutation`).
+- API client extended with `createServer`, `updateServer`, `deleteServer`, `connectServer`, `provisionServer`, `createSite`, `updateSite`, `deleteSite`, `deploySite`.
+
 ## v0.1.7 - 2026-04-28
 
 ### Added
