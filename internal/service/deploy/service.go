@@ -79,11 +79,9 @@ func (s *Service) EnqueueDeploy(ctx context.Context, siteID string) error {
 		return err
 	}
 
-	_, err = s.client.EnqueueContext(
-		ctx,
-		asynq.NewTask(TaskDeploySite, payload),
-		asynq.TaskID("deploy:"+strings.TrimSpace(siteID)),
-	)
+	// No TaskID: the distributed lock inside ExecuteDeploy prevents parallel runs.
+	// Using TaskID caused "task ID conflicts" errors when a previous retry was still queued.
+	_, err = s.client.EnqueueContext(ctx, asynq.NewTask(TaskDeploySite, payload))
 	return err
 }
 
