@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.2.0 - 2026-04-28
+
+**MVP milestone release.** Wraps up all v0.1.x features into the first complete production-ready version.
+
+See [RELEASE_NOTES_v0.2.0.md](./RELEASE_NOTES_v0.2.0.md) for the full feature summary.
+
 ## v0.1.21 - 2026-04-28
 
 ### Added
