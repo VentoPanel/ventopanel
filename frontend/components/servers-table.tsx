@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Pencil, Trash2, Plug, Wrench, ExternalLink } from "lucide-react";
 import { type Server } from "@/lib/api";
 import { useServers } from "@/hooks/use-servers";
+import { useAuth } from "@/hooks/use-auth";
 import {
   useDeleteServer,
   useConnectServer,
@@ -44,6 +45,7 @@ function statusVariant(
 
 export function ServersTable() {
   const { data: servers, isLoading, isError } = useServers();
+  const { isAdmin, canWrite } = useAuth();
   const deleteServer = useDeleteServer();
   const connectServer = useConnectServer();
   const provisionServer = useProvisionServer();
@@ -124,44 +126,50 @@ export function ServersTable() {
               <TableCell>{s.SSHUser}</TableCell>
               <TableCell>
                 <div className="flex justify-end gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title="Connect"
-                    disabled={connectServer.isPending}
-                    onClick={() => handleConnect(s)}
-                  >
-                    <Plug className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title="Provision"
-                    disabled={provisionServer.isPending}
-                    onClick={() => handleProvision(s)}
-                  >
-                    <Wrench className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title="Edit"
-                    onClick={() => {
-                      setEditTarget(s);
-                      setEditOpen(true);
-                    }}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title="Delete"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setDeleteTarget(s)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {canWrite && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Connect"
+                        disabled={connectServer.isPending}
+                        onClick={() => handleConnect(s)}
+                      >
+                        <Plug className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Provision"
+                        disabled={provisionServer.isPending}
+                        onClick={() => handleProvision(s)}
+                      >
+                        <Wrench className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Edit"
+                        onClick={() => {
+                          setEditTarget(s);
+                          setEditOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Delete"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(s)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>

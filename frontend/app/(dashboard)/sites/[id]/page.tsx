@@ -18,6 +18,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchSiteByID, fetchSiteLogs, type TaskLog } from "@/lib/api";
 import { useAuditEvents } from "@/hooks/use-audit";
 import { useDeploySite, useDeleteSite } from "@/hooks/use-site-mutations";
+import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,6 +99,7 @@ export default function SiteDetailPage({
     refetchIntervalInBackground: false,
   });
 
+  const { isAdmin, canWrite } = useAuth();
   const deploySite = useDeploySite();
   const deleteSite = useDeleteSite();
 
@@ -172,32 +174,38 @@ export default function SiteDetailPage({
               qc.invalidateQueries({ queryKey: ["site-logs", id] });
             }}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={deploySite.isPending}
-            onClick={handleDeploy}
-          >
-            <Rocket className="mr-2 h-4 w-4" />
-            Deploy
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setEditOpen(true)}
-          >
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete
-          </Button>
+          {canWrite && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={deploySite.isPending}
+                onClick={handleDeploy}
+              >
+                <Rocket className="mr-2 h-4 w-4" />
+                Deploy
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </>
+          )}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 

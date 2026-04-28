@@ -8,11 +8,13 @@ import { SitesTable } from "@/components/sites-table";
 import { SiteForm } from "@/components/site-form";
 import { RefreshIndicator } from "@/components/refresh-indicator";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function SitesPage() {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
   const { isFetching, dataUpdatedAt } = useSites();
+  const { canWrite } = useAuth();
 
   return (
     <div className="space-y-6">
@@ -31,10 +33,12 @@ export default function SitesPage() {
             intervalSeconds={SITES_REFETCH_INTERVAL / 1000}
             onRefresh={() => qc.invalidateQueries({ queryKey: ["sites"] })}
           />
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Site
-          </Button>
+          {canWrite && (
+            <Button onClick={() => setOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Site
+            </Button>
+          )}
         </div>
       </div>
 

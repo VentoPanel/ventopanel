@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchServers } from "@/lib/api";
 import { useServerStats } from "@/hooks/use-server-stats";
 import { useConnectServer, useProvisionServer } from "@/hooks/use-server-mutations";
+import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -97,6 +98,7 @@ export default function ServerDetailPage({
     dataUpdatedAt,
   } = useServerStats(id);
 
+  const { canWrite } = useAuth();
   const connectServer = useConnectServer();
   const provisionServer = useProvisionServer();
 
@@ -153,24 +155,28 @@ export default function ServerDetailPage({
               qc.invalidateQueries({ queryKey: ["server-stats", id] })
             }
           />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={connectServer.isPending}
-            onClick={handleConnect}
-          >
-            <Plug className="mr-2 h-4 w-4" />
-            Connect
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={provisionServer.isPending}
-            onClick={handleProvision}
-          >
-            <Wrench className="mr-2 h-4 w-4" />
-            Provision
-          </Button>
+          {canWrite && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={connectServer.isPending}
+                onClick={handleConnect}
+              >
+                <Plug className="mr-2 h-4 w-4" />
+                Connect
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={provisionServer.isPending}
+                onClick={handleProvision}
+              >
+                <Wrench className="mr-2 h-4 w-4" />
+                Provision
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

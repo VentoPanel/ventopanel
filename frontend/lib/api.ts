@@ -25,6 +25,29 @@ export function isTokenValid(): boolean {
   }
 }
 
+export interface TokenPayload {
+  uid?: string;
+  tid?: string;
+  role?: string;
+  email?: string;
+  exp?: number;
+}
+
+export function getTokenPayload(): TokenPayload | null {
+  if (typeof window === "undefined") return null;
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return null;
+  try {
+    return JSON.parse(atob(token.split(".")[1])) as TokenPayload;
+  } catch {
+    return null;
+  }
+}
+
+export function getRole(): string {
+  return getTokenPayload()?.role ?? "";
+}
+
 export interface Server {
   ID: string;
   Name: string;

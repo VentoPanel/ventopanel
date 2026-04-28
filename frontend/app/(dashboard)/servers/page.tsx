@@ -8,11 +8,13 @@ import { ServersTable } from "@/components/servers-table";
 import { ServerForm } from "@/components/server-form";
 import { RefreshIndicator } from "@/components/refresh-indicator";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function ServersPage() {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
   const { isFetching, dataUpdatedAt } = useServers();
+  const { canWrite } = useAuth();
 
   return (
     <div className="space-y-6">
@@ -33,10 +35,12 @@ export default function ServersPage() {
             intervalSeconds={SERVERS_REFETCH_INTERVAL / 1000}
             onRefresh={() => qc.invalidateQueries({ queryKey: ["servers"] })}
           />
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Server
-          </Button>
+          {canWrite && (
+            <Button onClick={() => setOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Server
+            </Button>
+          )}
         </div>
       </div>
 

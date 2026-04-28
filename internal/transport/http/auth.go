@@ -11,11 +11,13 @@ import (
 const (
 	contextUserIDKey = "auth_user_id"
 	contextTeamIDKey = "auth_team_id"
+	contextRoleKey   = "auth_role"
 )
 
 type Claims struct {
 	UserID  string `json:"uid"`
 	TeamID  string `json:"tid"`
+	Role    string `json:"role"`
 	// TeamIDLegacy supports tokens issued with "team_id" claim (older tooling / scripts).
 	TeamIDLegacy string `json:"team_id"`
 	jwt.RegisteredClaims
@@ -64,6 +66,9 @@ func AuthContextMiddlewareWithOptions(opts AuthOptions) gin.HandlerFunc {
 			}
 			if tid != "" {
 				c.Set(contextTeamIDKey, tid)
+			}
+			if role := strings.TrimSpace(claims.Role); role != "" {
+				c.Set(contextRoleKey, role)
 			}
 		}
 		}

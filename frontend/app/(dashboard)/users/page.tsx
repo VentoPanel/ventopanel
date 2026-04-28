@@ -9,6 +9,7 @@ import {
   deleteUser,
   type User,
 } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Card,
   CardContent,
@@ -46,6 +47,8 @@ function RoleBadge({ role }: { role: string }) {
 
 export default function UsersPage() {
   const qc = useQueryClient();
+
+  const { isAdmin } = useAuth();
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
@@ -129,30 +132,34 @@ export default function UsersPage() {
 
                 <RoleBadge role={user.role} />
 
-                {/* Role selector */}
-                <select
-                  className="rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                  value={user.role}
-                  disabled={rolesMutation.isPending}
-                  onChange={(e) =>
-                    rolesMutation.mutate({ id: user.id, role: e.target.value })
-                  }
-                >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+                {isAdmin && (
+                  <>
+                    {/* Role selector */}
+                    <select
+                      className="rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
+                      value={user.role}
+                      disabled={rolesMutation.isPending}
+                      onChange={(e) =>
+                        rolesMutation.mutate({ id: user.id, role: e.target.value })
+                      }
+                    >
+                      {ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-destructive hover:text-destructive h-7 w-7 shrink-0"
-                  onClick={() => setConfirm(user)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive hover:text-destructive h-7 w-7 shrink-0"
+                      onClick={() => setConfirm(user)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                )}
               </li>
             ))}
           </ul>

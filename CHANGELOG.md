@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.20 - 2026-04-28
+
+### Added
+
+- `Role` field added to `Claims` struct (`json:"role"`) and extracted into `contextRoleKey` by the auth middleware on every request.
+- `getTokenPayload()` and `getRole()` in `lib/api.ts` — decode role from the stored JWT without an extra API call.
+- `useAuth()` hook — returns `{ role, isAdmin, isEditor, canWrite }` derived from the JWT payload.
+
+### Changed
+
+- **Servers table**: Edit / Connect / Provision hidden for `viewer`; Delete hidden for non-`admin`.
+- **Sites table**: Deploy / Edit hidden for `viewer`; Delete hidden for non-`admin`.
+- **Servers page**: "New Server" button hidden for `viewer`.
+- **Sites page**: "New Site" button hidden for `viewer`.
+- **Server detail page**: Connect / Provision buttons hidden for `viewer`.
+- **Site detail page**: Deploy / Edit hidden for `viewer`; Delete hidden for non-`admin`.
+- **Users page**: Role selector and Delete button hidden for non-`admin`.
+
 ## v0.1.19 - 2026-04-28
 
 ### Added
