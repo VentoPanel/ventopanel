@@ -2,30 +2,34 @@ package alert
 
 import (
 	"context"
+	"errors"
 
 	domain "github.com/your-org/ventopanel/internal/domain/alert"
 )
 
 type Service struct {
-	telegram domain.Notifier
-	whatsApp domain.Notifier
+	notifiers []domain.Notifier
 }
 
-func NewService(telegram domain.Notifier, whatsApp domain.Notifier) *Service {
-	return &Service{
-		telegram: telegram,
-		whatsApp: whatsApp,
+// NewService accepts any number of notifiers. Nils are skipped.
+func NewService(notifiers ...domain.Notifier) *Service {
+	active := make([]domain.Notifier, 0, len(notifiers))
+	for _, n := range notifiers {
+		if n != nil {
+			active = append(active, n)
+		}
 	}
+	return &Service{notifiers: active}
 }
 
+// NotifyAll sends message to all configured notifiers.
+// Errors are collected and joined so all notifiers are always attempted.
 func (s *Service) NotifyAll(ctx context.Context, message string) error {
-	if err := s.telegram.Notify(ctx, message); err != nil {
-		return err
+	var errs []error
+	for _, n := range s.notifiers {
+		if err := n.Notify(ctx, message); err != nil {
+			errs = append(errs, err)
+		}
 	}
-
-	if err := s.whatsApp.Notify(ctx, message); err != nil {
-		return err
-	}
-
-	return nil
+	return errors.Join(errs...)
 }

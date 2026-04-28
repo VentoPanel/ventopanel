@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/hibiken/asynq"
 
@@ -47,10 +48,20 @@ func NewMux(
 		logger.Info().Str("site_id", payload.SiteID).Msg("processing deploy task")
 
 		if err := deployService.ExecuteDeploy(ctx, payload); err != nil {
-			_ = alertService.NotifyAll(ctx, "site deployment failed")
+			_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+				"🚨 <b>Site deploy FAILED</b>\n"+
+					"Site: <code>%s</code>\n"+
+					"Error: <code>%s</code>",
+				payload.SiteID, err.Error(),
+			))
 			return err
 		}
 
+		_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+			"✅ <b>Site deployed successfully</b>\n"+
+				"Site: <code>%s</code>",
+			payload.SiteID,
+		))
 		return nil
 	})
 
@@ -63,10 +74,20 @@ func NewMux(
 		logger.Info().Str("server_id", payload.ServerID).Msg("processing provision task")
 
 		if err := provisionService.ExecuteProvision(ctx, payload); err != nil {
-			_ = alertService.NotifyAll(ctx, "server provisioning failed")
+			_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+				"🚨 <b>Server provisioning FAILED</b>\n"+
+					"Server: <code>%s</code>\n"+
+					"Error: <code>%s</code>",
+				payload.ServerID, err.Error(),
+			))
 			return err
 		}
 
+		_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+			"✅ <b>Server provisioned successfully</b>\n"+
+				"Server: <code>%s</code>",
+			payload.ServerID,
+		))
 		return nil
 	})
 
@@ -79,10 +100,20 @@ func NewMux(
 		logger.Info().Str("site_id", payload.SiteID).Msg("processing ssl issue task")
 
 		if err := sslService.ExecuteIssue(ctx, payload); err != nil {
-			_ = alertService.NotifyAll(ctx, "ssl issuing failed")
+			_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+				"🚨 <b>SSL issue FAILED</b>\n"+
+					"Site: <code>%s</code>\n"+
+					"Error: <code>%s</code>",
+				payload.SiteID, err.Error(),
+			))
 			return err
 		}
 
+		_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+			"🔒 <b>SSL certificate issued</b>\n"+
+				"Site: <code>%s</code>",
+			payload.SiteID,
+		))
 		return nil
 	})
 
@@ -95,10 +126,20 @@ func NewMux(
 		logger.Info().Str("server_id", payload.ServerID).Msg("processing ssl renew task")
 
 		if err := sslService.ExecuteRenew(ctx, payload); err != nil {
-			_ = alertService.NotifyAll(ctx, "ssl renewal failed")
+			_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+				"🚨 <b>SSL renewal FAILED</b>\n"+
+					"Server: <code>%s</code>\n"+
+					"Error: <code>%s</code>",
+				payload.ServerID, err.Error(),
+			))
 			return err
 		}
 
+		_ = alertService.NotifyAll(ctx, fmt.Sprintf(
+			"🔒 <b>SSL certificates renewed</b>\n"+
+				"Server: <code>%s</code>",
+			payload.ServerID,
+		))
 		return nil
 	})
 

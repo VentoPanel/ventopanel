@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.10 - 2026-04-28
+
+### Added
+
+- Real Telegram Bot API integration: HTTP POST to `sendMessage` with HTML parse mode and 5-second timeout.
+- WhatsApp generic webhook support (Evolution API / Twilio compatible).
+- Success notifications alongside failure alerts for deploy, provision, SSL issue, and SSL renew tasks.
+- `alertService.NotifyAll` now fans out to all notifiers and collects errors with `errors.Join` so one failing channel does not block others.
+- Contextual HTML messages with site/server IDs and error details (e.g. `🚨 Site deploy FAILED / Site: <code>…</code>`).
+
+### Changed
+
+- `alert.NewService` signature changed to variadic `NewService(notifiers ...Notifier)`.
+- Updated alert service test to reflect fan-out behaviour.
+
 ## v0.1.9 - 2026-04-28
 
 ### Added

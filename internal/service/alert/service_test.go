@@ -34,16 +34,27 @@ func TestNotifyAll(t *testing.T) {
 	}
 }
 
-func TestNotifyAllStopsOnTelegramFailure(t *testing.T) {
+// TestNotifyAllContinuesOnPartialFailure verifies that all notifiers are attempted
+// even when one of them returns an error, and the combined error is returned.
+func TestNotifyAllContinuesOnPartialFailure(t *testing.T) {
 	telegram := &notifierStub{err: errors.New("telegram unavailable")}
 	whatsApp := &notifierStub{}
 	service := NewService(telegram, whatsApp)
 
-	if err := service.NotifyAll(context.Background(), "server down"); err == nil {
+	err := service.NotifyAll(context.Background(), "server down")
+	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 
-	if len(whatsApp.messages) != 0 {
-		t.Fatalf("whatsapp should not be called when telegram fails: %#v", whatsApp.messages)
+	// WhatsApp must still have been called despite Telegram failing.
+	if len(whatsApp.messages) != 1 {
+		t.Fatalf("whatsapp should be called even when telegram fails; messages: %#v", whatsApp.messages)
+	}
+}
+
+func TestNotifyAllNoNotifiers(t *testing.T) {
+	service := NewService()
+	if err := service.NotifyAll(context.Background(), "test"); err != nil {
+		t.Fatalf("expected nil error with no notifiers, got: %v", err)
 	}
 }
