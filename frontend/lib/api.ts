@@ -104,6 +104,43 @@ async function apiFetch<T>(
   return res.json() as Promise<T>;
 }
 
+// Auth
+export interface LoginResponse {
+  token: string;
+  email: string;
+  role: string;
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  const res = await fetch("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.error ?? "Login failed");
+  }
+  return res.json() as Promise<LoginResponse>;
+}
+
+export async function registerUser(params: {
+  email: string;
+  password: string;
+  team_id: string;
+}): Promise<{ id: string; email: string; role: string }> {
+  const res = await fetch("/api/v1/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.error ?? "Registration failed");
+  }
+  return res.json();
+}
+
 // Audit
 export interface AuditEvent {
   ID: string;

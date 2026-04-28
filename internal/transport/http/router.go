@@ -7,6 +7,7 @@ func RegisterRoutes(
 	healthHandler *HealthHandler,
 	metricsHandler *MetricsHandler,
 	devAuthHandler *DevAuthHandler,
+	authHandler *AuthHandler,
 	serverHandler *ServerHandler,
 	siteHandler *SiteHandler,
 	teamHandler *TeamHandler,
@@ -18,6 +19,8 @@ func RegisterRoutes(
 	api := engine.Group("/api/v1")
 	{
 		api.GET("/health", healthHandler.Get)
+		api.POST("/auth/login", authHandler.Login)
+		api.POST("/auth/register", authHandler.Register)
 		if devAuthHandler != nil {
 			api.POST("/dev/token", devAuthHandler.IssueToken)
 		}

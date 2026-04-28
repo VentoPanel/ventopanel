@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.14 - 2026-04-28
+
+### Added
+
+- `users` table migration (email, bcrypt password_hash, team_id, role).
+- `domain/user` package with `User`, `Repository` interface, sentinel errors.
+- `UserRepository` with `Create`, `GetByEmail`, `GetByID`, `Count`.
+- `service/auth`: `Register` (first user → admin bootstrap) + `Login` with bcrypt + JWT issuing (12h TTL, same format as existing middleware).
+- `POST /api/v1/auth/login` — { email, password } → { token, email, role }.
+- `POST /api/v1/auth/register` — { email, password, team_id } → { id, email, role }.
+- Frontend `/login` page replaced with email+password form (tab: Sign In / Register), show/hide password toggle, loading spinner, inline error and success messages.
+- `login()` and `registerUser()` functions added to `lib/api.ts`.
+
 ## v0.1.13 - 2026-04-28
 
 ### Added
