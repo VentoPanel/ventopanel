@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Server, Globe, LogOut, ClipboardList } from "lucide-react";
+import { LayoutDashboard, Server, Globe, LogOut, ClipboardList, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ const links = [
   { href: "/servers", label: "Servers", icon: Server },
   { href: "/sites", label: "Sites", icon: Globe },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Nav() {

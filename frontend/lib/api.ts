@@ -270,6 +270,26 @@ export async function deleteSite(id: string): Promise<void> {
   return apiFetch<void>(`/sites/${id}`, { method: "DELETE" });
 }
 
+// Settings
+export interface NotificationSettings {
+  telegram_bot_token: string;
+  telegram_chat_id: string;
+  whatsapp_webhook_url: string;
+}
+
+export async function fetchNotificationSettings(): Promise<NotificationSettings> {
+  return apiFetch<NotificationSettings>("/settings/notifications");
+}
+
+export async function updateNotificationSettings(
+  settings: NotificationSettings,
+): Promise<void> {
+  await apiFetch("/settings/notifications", {
+    method: "PATCH",
+    body: JSON.stringify(settings),
+  });
+}
+
 export async function deploySite(id: string): Promise<{ status: string }> {
   return apiFetch<{ status: string }>(`/sites/${id}/deploy`, {
     method: "POST",

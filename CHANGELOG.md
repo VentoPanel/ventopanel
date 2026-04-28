@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.18 - 2026-04-28
+
+### Added
+
+- `app_settings` table (migration 000007) — key-value store with seeded empty rows for all notification keys.
+- `domain/settings` package: `NotificationConfig` struct, `Repository` interface.
+- `SettingsRepository` in `repository/postgres`: `Get`, `Set`, `GetNotificationConfig`, `SetNotificationConfig`.
+- On API startup, env-based Telegram/WhatsApp credentials are seeded into `app_settings` if DB rows are still empty (one-time migration of existing config).
+- `alert.Service.WithSettingsRepo(repo)` — when set, `NotifyAll` reads `NotificationConfig` from DB on every call (no restart needed after UI change).
+- `GET /api/v1/settings/notifications` — returns current notification config; bot token is masked (`••••xxxx`).
+- `PATCH /api/v1/settings/notifications` — saves new values; masked placeholder sent back unchanged preserves the existing token.
+- Frontend `/settings` page: Telegram (bot token with show/hide toggle, chat ID) and WhatsApp (webhook URL) forms, Save button with toast feedback.
+- "Settings" link added to the sidebar nav.
+
 ## v0.1.17 - 2026-04-28
 
 ### Added

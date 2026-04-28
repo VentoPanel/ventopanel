@@ -30,6 +30,7 @@ import (
 	sslsvc "github.com/your-org/ventopanel/internal/service/ssl"
 	teamsvc "github.com/your-org/ventopanel/internal/service/team"
 	httptransport "github.com/your-org/ventopanel/internal/transport/http"
+	settingsdomain "github.com/your-org/ventopanel/internal/domain/settings"
 	"github.com/your-org/ventopanel/internal/worker"
 )
 
@@ -79,6 +80,20 @@ func main() {
 	userRepo := postgresrepo.NewUserRepository(pgPool)
 	statusEventRepo := postgresrepo.NewStatusEventRepository(pgPool)
 	taskLogRepo := postgresrepo.NewTaskLogRepository(pgPool)
+	settingsRepo := postgresrepo.NewSettingsRepository(pgPool)
+
+	// Seed DB with env-based notifier config if DB values are still empty.
+	if cfg.TelegramBotToken != "" || cfg.TelegramChatID != "" || cfg.WhatsAppWebhookURL != "" {
+		existing, _ := settingsRepo.GetNotificationConfig(ctx)
+		if existing.TelegramBotToken == "" && existing.TelegramChatID == "" && existing.WhatsAppWebhookURL == "" {
+			_ = settingsRepo.SetNotificationConfig(ctx, settingsdomain.NotificationConfig{
+				TelegramBotToken:   cfg.TelegramBotToken,
+				TelegramChatID:     cfg.TelegramChatID,
+				WhatsAppWebhookURL: cfg.WhatsAppWebhookURL,
+			})
+			logger.Info().Msg("seeded notification settings from environment variables")
+		}
+	}
 
 	sshExecutor := ssh.NewExecutor(cfg.SSHDialTimeout)
 	lockManager := ilock.NewRedisLockManager(redisClient)
@@ -99,9 +114,9 @@ func main() {
 	sslService := sslsvc.NewService(siteRepo, serverRepo, sslManager, asynqClient, lockManager, statusEventRepo)
 	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo)
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
-	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier)
+	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier).WithSettingsRepo(settingsRepo)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -145,6 +160,7 @@ func buildRouter(
 	auditService *auditsvc.Service,
 	statusEventRepo *postgresrepo.StatusEventRepository,
 	taskLogRepo *postgresrepo.TaskLogRepository,
+	settingsRepo *postgresrepo.SettingsRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -170,8 +186,9 @@ func buildRouter(
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)
 	auditHandler := httptransport.NewAuditHandler(auditService)
+	settingsHandler := httptransport.NewSettingsHandler(settingsRepo)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler)
 
 	return engine
 }

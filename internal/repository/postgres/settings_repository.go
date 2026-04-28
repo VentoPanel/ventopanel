@@ -1,0 +1,80 @@
+package postgres
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/your-org/ventopanel/internal/domain/settings"
+)
+
+type SettingsRepository struct {
+	db *pgxpool.Pool
+}
+
+func NewSettingsRepository(db *pgxpool.Pool) *SettingsRepository {
+	return &SettingsRepository{db: db}
+}
+
+func (r *SettingsRepository) Get(ctx context.Context, key string) (string, error) {
+	var value string
+	err := r.db.QueryRow(ctx,
+		`SELECT value FROM app_settings WHERE key = $1`, key,
+	).Scan(&value)
+	return value, err
+}
+
+func (r *SettingsRepository) Set(ctx context.Context, key, value string) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO app_settings (key, value, updated_at)
+		 VALUES ($1, $2, NOW())
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+		key, value,
+	)
+	return err
+}
+
+func (r *SettingsRepository) GetNotificationConfig(ctx context.Context) (settings.NotificationConfig, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT key, value FROM app_settings
+		 WHERE key IN ($1, $2, $3)`,
+		settings.KeyTelegramBotToken,
+		settings.KeyTelegramChatID,
+		settings.KeyWhatsAppWebhookURL,
+	)
+	if err != nil {
+		return settings.NotificationConfig{}, err
+	}
+	defer rows.Close()
+
+	var cfg settings.NotificationConfig
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return cfg, err
+		}
+		switch k {
+		case settings.KeyTelegramBotToken:
+			cfg.TelegramBotToken = v
+		case settings.KeyTelegramChatID:
+			cfg.TelegramChatID = v
+		case settings.KeyWhatsAppWebhookURL:
+			cfg.WhatsAppWebhookURL = v
+		}
+	}
+	return cfg, rows.Err()
+}
+
+func (r *SettingsRepository) SetNotificationConfig(ctx context.Context, cfg settings.NotificationConfig) error {
+	pairs := [][2]string{
+		{settings.KeyTelegramBotToken, cfg.TelegramBotToken},
+		{settings.KeyTelegramChatID, cfg.TelegramChatID},
+		{settings.KeyWhatsAppWebhookURL, cfg.WhatsAppWebhookURL},
+	}
+	for _, kv := range pairs {
+		if err := r.Set(ctx, kv[0], kv[1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}

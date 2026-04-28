@@ -13,6 +13,7 @@ func RegisterRoutes(
 	teamHandler *TeamHandler,
 	observabilityHandler *ObservabilityHandler,
 	auditHandler *AuditHandler,
+	settingsHandler *SettingsHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -44,5 +45,7 @@ func RegisterRoutes(
 		api.GET("/teams/access", teamHandler.List)
 		api.GET("/observability/ssl", observabilityHandler.SSL)
 		api.GET("/audit/status-events", auditHandler.ListStatusEvents)
+		api.GET("/settings/notifications", settingsHandler.GetNotifications)
+		api.PATCH("/settings/notifications", settingsHandler.UpdateNotifications)
 	}
 }
