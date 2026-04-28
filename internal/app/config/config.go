@@ -21,7 +21,9 @@ type Config struct {
 	TelegramChatID     string        `env:"TELEGRAM_CHAT_ID"`
 	WhatsAppWebhookURL string        `env:"WHATSAPP_WEBHOOK_URL"`
 	AuthJWTSecret      string        `env:"AUTH_JWT_SECRET" env-default:"dev-insecure-change-me"`
-	AuthAllowHeaders   bool          `env:"AUTH_ALLOW_HEADER_FALLBACK" env-default:"true"`
+	AuthAllowHeaders   bool          `env:"AUTH_ALLOW_HEADER_FALLBACK" env-default:"false"`
+	AuthJWTIssuer      string        `env:"AUTH_JWT_ISSUER" env-default:""`
+	AuthJWTAudience    string        `env:"AUTH_JWT_AUDIENCE" env-default:""`
 }
 
 func Load() (*Config, error) {
