@@ -95,8 +95,8 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, *d
 func (s *Service) issueToken(u *domain.User) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"sub":     u.ID,
-		"team_id": u.TeamID,
+		"uid":     u.ID,
+		"tid":     u.TeamID,
 		"role":    u.Role,
 		"email":   u.Email,
 		"iat":     now.Unix(),

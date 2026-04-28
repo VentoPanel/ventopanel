@@ -14,8 +14,10 @@ const (
 )
 
 type Claims struct {
-	UserID string `json:"uid"`
-	TeamID string `json:"tid"`
+	UserID  string `json:"uid"`
+	TeamID  string `json:"tid"`
+	// TeamIDLegacy supports tokens issued with "team_id" claim (older tooling / scripts).
+	TeamIDLegacy string `json:"team_id"`
 	jwt.RegisteredClaims
 }
 
@@ -52,14 +54,18 @@ func AuthContextMiddlewareWithOptions(opts AuthOptions) gin.HandlerFunc {
 			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
 				return []byte(secret), nil
 			}, parseOpts...)
-			if err == nil && token != nil && token.Valid {
-				if uid := strings.TrimSpace(claims.UserID); uid != "" {
-					c.Set(contextUserIDKey, uid)
-				}
-				if tid := strings.TrimSpace(claims.TeamID); tid != "" {
-					c.Set(contextTeamIDKey, tid)
-				}
+		if err == nil && token != nil && token.Valid {
+			if uid := strings.TrimSpace(claims.UserID); uid != "" {
+				c.Set(contextUserIDKey, uid)
 			}
+			tid := strings.TrimSpace(claims.TeamID)
+			if tid == "" {
+				tid = strings.TrimSpace(claims.TeamIDLegacy)
+			}
+			if tid != "" {
+				c.Set(contextTeamIDKey, tid)
+			}
+		}
 		}
 
 		if opts.AllowHeaderFallback {
