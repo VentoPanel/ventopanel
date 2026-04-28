@@ -103,13 +103,40 @@ func (h *ServerHandler) Create(c *gin.Context) {
 }
 
 func (h *ServerHandler) List(c *gin.Context) {
+	if h.teamService == nil {
+		servers, err := h.service.List(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, listResponse[domain.Server]{Items: servers})
+		return
+	}
+
+	teamID, ok := requireTeamID(c)
+	if !ok {
+		return
+	}
+
 	servers, err := h.service.List(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, listResponse[domain.Server]{Items: servers})
+	filtered := make([]domain.Server, 0, len(servers))
+	for _, server := range servers {
+		allowed, err := h.teamService.HasServerAccess(c.Request.Context(), teamID, server.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		if allowed {
+			filtered = append(filtered, server)
+		}
+	}
+
+	c.JSON(http.StatusOK, listResponse[domain.Server]{Items: filtered})
 }
 
 func (h *ServerHandler) GetByID(c *gin.Context) {

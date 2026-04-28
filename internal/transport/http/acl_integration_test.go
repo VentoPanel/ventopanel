@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +17,10 @@ import (
 	sitesvc "github.com/your-org/ventopanel/internal/service/site"
 	teamsvc "github.com/your-org/ventopanel/internal/service/team"
 )
+
+func withAuthFallback(engine *gin.Engine) {
+	engine.Use(AuthContextMiddleware("", true))
+}
 
 func TestSiteGetByID_ACLAllowed(t *testing.T) {
 	pool := openTestDB(t)
@@ -39,6 +44,7 @@ func TestSiteGetByID_ACLAllowed(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.GET("/api/v1/sites/:id", handler.GetByID)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/"+site.ID, nil)
@@ -72,6 +78,7 @@ func TestSiteGetByID_ACLForbidden(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.GET("/api/v1/sites/:id", handler.GetByID)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/"+site.ID, nil)
@@ -106,6 +113,7 @@ func TestSiteUpdate_ACLAdminAllowed(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.PUT("/api/v1/sites/:id", handler.Update)
 
 	body := `{"server_id":"` + server.ID + `","name":"updated-name","domain":"admin-write.example.com","runtime":"node","repository_url":"https://example.com/repo.git","status":"draft"}`
@@ -142,6 +150,7 @@ func TestSiteUpdate_ACLViewerForbidden(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.PUT("/api/v1/sites/:id", handler.Update)
 
 	body := `{"server_id":"` + server.ID + `","name":"should-not-update","domain":"viewer-write.example.com","runtime":"node","repository_url":"https://example.com/repo.git","status":"draft"}`
@@ -178,6 +187,7 @@ func TestSiteDelete_ACLAdminAllowed(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.DELETE("/api/v1/sites/:id", handler.Delete)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/sites/"+site.ID, nil)
@@ -212,6 +222,7 @@ func TestSiteDeploy_ACLViewerForbidden(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.POST("/api/v1/sites/:id/deploy", handler.Deploy)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sites/"+site.ID+"/deploy", nil)
@@ -246,6 +257,7 @@ func TestServerGetByID_ACLAllowedViaSiteGrant(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.GET("/api/v1/servers/:id", handler.GetByID)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/servers/"+server.ID, nil)
@@ -280,6 +292,7 @@ func TestServerUpdate_ACLViewerForbidden(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	withAuthFallback(engine)
 	engine.PUT("/api/v1/servers/:id", handler.Update)
 
 	body := `{"name":"new-name","host":"10.0.1.17","port":22,"provider":"hetzner","status":"pending","ssh_user":"root","ssh_password":"secret"}`
@@ -291,6 +304,101 @@ func TestServerUpdate_ACLViewerForbidden(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSiteList_ACLFiltersInaccessibleItems(t *testing.T) {
+	pool := openTestDB(t)
+	ensureServersTable(t, pool)
+	ensureSitesTable(t, pool)
+	ensureTeamsAccessTables(t, pool)
+	truncateServers(t, pool)
+
+	serverRepo := postgresrepo.NewServerRepository(pool, testCipher{})
+	siteRepo := postgresrepo.NewSiteRepository(pool)
+	teamRepo := postgresrepo.NewTeamRepository(pool)
+
+	server := createTestServer(t, serverRepo, "10.0.1.18")
+	allowedSite := createTestSite(t, siteRepo, server.ID, "allowed-list.example.com")
+	_ = createTestSite(t, siteRepo, server.ID, "denied-list.example.com")
+	teamID := createTestTeam(t, pool, "team-site-list")
+	grantSiteAccess(t, pool, teamID, allowedSite.ID, "viewer")
+
+	siteService := sitesvc.NewService(siteRepo, serverRepo)
+	teamService := teamsvc.NewService(teamRepo)
+	handler := NewSiteHandler(siteService, nil, teamService)
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	withAuthFallback(engine)
+	engine.GET("/api/v1/sites", handler.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites", nil)
+	req.Header.Set("X-Team-ID", teamID)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp listResponse[sitedomain.Site]
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 site after ACL filter, got %d", len(resp.Items))
+	}
+	if resp.Items[0].ID != allowedSite.ID {
+		t.Fatalf("unexpected site in response: %s", resp.Items[0].ID)
+	}
+}
+
+func TestServerList_ACLFiltersInaccessibleItems(t *testing.T) {
+	pool := openTestDB(t)
+	ensureServersTable(t, pool)
+	ensureSitesTable(t, pool)
+	ensureTeamsAccessTables(t, pool)
+	truncateServers(t, pool)
+
+	serverRepo := postgresrepo.NewServerRepository(pool, testCipher{})
+	siteRepo := postgresrepo.NewSiteRepository(pool)
+	teamRepo := postgresrepo.NewTeamRepository(pool)
+
+	allowedServer := createTestServer(t, serverRepo, "10.0.1.19")
+	deniedServer := createTestServer(t, serverRepo, "10.0.1.20")
+	allowedSite := createTestSite(t, siteRepo, allowedServer.ID, "server-allowed-list.example.com")
+	_ = createTestSite(t, siteRepo, deniedServer.ID, "server-denied-list.example.com")
+	teamID := createTestTeam(t, pool, "team-server-list")
+	grantSiteAccess(t, pool, teamID, allowedSite.ID, "viewer")
+
+	serverService := serversvc.NewService(serverRepo, sshExecutorStub{}, nil)
+	teamService := teamsvc.NewService(teamRepo)
+	handler := NewServerHandler(serverService, nil, nil, teamService)
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	withAuthFallback(engine)
+	engine.GET("/api/v1/servers", handler.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/servers", nil)
+	req.Header.Set("X-Team-ID", teamID)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp listResponse[serverdomain.Server]
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 server after ACL filter, got %d", len(resp.Items))
+	}
+	if resp.Items[0].ID != allowedServer.ID {
+		t.Fatalf("unexpected server in response: %s", resp.Items[0].ID)
 	}
 }
 

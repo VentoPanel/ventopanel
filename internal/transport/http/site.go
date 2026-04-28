@@ -88,13 +88,40 @@ func (h *SiteHandler) Create(c *gin.Context) {
 }
 
 func (h *SiteHandler) List(c *gin.Context) {
+	if h.teamService == nil {
+		sites, err := h.service.List(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, listResponse[domain.Site]{Items: sites})
+		return
+	}
+
+	teamID, ok := requireTeamID(c)
+	if !ok {
+		return
+	}
+
 	sites, err := h.service.List(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, listResponse[domain.Site]{Items: sites})
+	filtered := make([]domain.Site, 0, len(sites))
+	for _, site := range sites {
+		allowed, err := h.teamService.HasSiteAccess(c.Request.Context(), teamID, site.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		if allowed {
+			filtered = append(filtered, site)
+		}
+	}
+
+	c.JSON(http.StatusOK, listResponse[domain.Site]{Items: filtered})
 }
 
 func (h *SiteHandler) GetByID(c *gin.Context) {
