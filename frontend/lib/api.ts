@@ -195,6 +195,10 @@ export async function fetchSites(): Promise<Site[]> {
   return data.items ?? [];
 }
 
+export async function fetchSiteByID(id: string): Promise<Site> {
+  return apiFetch<Site>(`/sites/${id}`);
+}
+
 export async function createSite(input: SiteInput): Promise<Site> {
   return apiFetch<Site>("/sites", {
     method: "POST",

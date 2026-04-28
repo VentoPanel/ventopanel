@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Pencil, Trash2, Rocket } from "lucide-react";
+import { Pencil, Trash2, Rocket, ExternalLink } from "lucide-react";
 import { type Site } from "@/lib/api";
 import { useSites } from "@/hooks/use-sites";
 import {
@@ -92,7 +93,15 @@ export function SitesTable() {
         <TableBody>
           {sites.map((s) => (
             <TableRow key={s.ID}>
-              <TableCell className="font-medium">{s.Name}</TableCell>
+              <TableCell className="font-medium">
+                <Link
+                  href={`/sites/${s.ID}`}
+                  className="flex items-center gap-1 hover:underline"
+                >
+                  {s.Name}
+                  <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                </Link>
+              </TableCell>
               <TableCell className="font-mono text-xs">{s.Domain}</TableCell>
               <TableCell className="capitalize">{s.Runtime}</TableCell>
               <TableCell>

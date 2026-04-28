@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.13 - 2026-04-28
+
+### Added
+
+- `/sites/[id]` detail page: info cards (runtime, domain, repository, created date), status badge, Deploy / Edit / Delete actions, and a timeline of audit events scoped to this site.
+- `fetchSiteByID` API function for fetching a single site by ID.
+- Site names in the sites table are now clickable links to the detail page.
+- Site detail auto-refreshes every 15 seconds; RefreshIndicator shown in header.
+- Audit timeline shows `toStatus → fromStatus` with colour-coded badges and timestamps.
+
 ## v0.1.12 - 2026-04-28
 
 ### Added
