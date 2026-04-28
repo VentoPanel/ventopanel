@@ -159,7 +159,7 @@ func TestServerConnect_WritesAuditOnSuccess(t *testing.T) {
 		t.Fatalf("create server: %v", err)
 	}
 
-	h := NewServerHandler(serverService, nil, nil)
+	h := NewServerHandler(serverService, nil, nil, nil)
 	engine := gin.New()
 	engine.POST("/api/v1/servers/:id/connect", h.Connect)
 
@@ -221,7 +221,7 @@ func TestServerConnect_WritesAuditOnFailure(t *testing.T) {
 		t.Fatalf("create server: %v", err)
 	}
 
-	h := NewServerHandler(serverService, nil, nil)
+	h := NewServerHandler(serverService, nil, nil, nil)
 	engine := gin.New()
 	engine.POST("/api/v1/servers/:id/connect", h.Connect)
 
@@ -283,7 +283,7 @@ func TestServerConnect_InvalidTransition_DoesNotWriteAudit(t *testing.T) {
 		t.Fatalf("create server: %v", err)
 	}
 
-	h := NewServerHandler(serverService, nil, nil)
+	h := NewServerHandler(serverService, nil, nil, nil)
 	engine := gin.New()
 	engine.POST("/api/v1/servers/:id/connect", h.Connect)
 
@@ -325,7 +325,7 @@ func TestServerConnect_NotFound(t *testing.T) {
 	truncateServers(t, pool)
 
 	serverService := serversvc.NewService(repo, sshExecutorStub{}, auditRepo)
-	h := NewServerHandler(serverService, nil, nil)
+	h := NewServerHandler(serverService, nil, nil, nil)
 
 	engine := gin.New()
 	engine.POST("/api/v1/servers/:id/connect", h.Connect)

@@ -3,21 +3,61 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	domain "github.com/your-org/ventopanel/internal/domain/site"
 	deploysvc "github.com/your-org/ventopanel/internal/service/deploy"
 	sitesvc "github.com/your-org/ventopanel/internal/service/site"
+	teamsvc "github.com/your-org/ventopanel/internal/service/team"
 )
 
 type SiteHandler struct {
 	service       *sitesvc.Service
 	deployService *deploysvc.Service
+	teamService   *teamsvc.Service
 }
 
-func NewSiteHandler(service *sitesvc.Service, deployService *deploysvc.Service) *SiteHandler {
-	return &SiteHandler{service: service, deployService: deployService}
+func (h *SiteHandler) authorizeSite(c *gin.Context, siteID string, requireWrite bool) bool {
+	teamID := strings.TrimSpace(c.GetHeader("X-Team-ID"))
+	if teamID == "" {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden: missing X-Team-ID"})
+		return false
+	}
+
+	if requireWrite {
+		role, err := h.teamService.GetSiteRole(c.Request.Context(), teamID, siteID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(role)) {
+		case "owner", "admin":
+			return true
+		case "":
+			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+			return false
+		default:
+			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden: insufficient role"})
+			return false
+		}
+	}
+
+	allowed, err := h.teamService.HasSiteAccess(c.Request.Context(), teamID, siteID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return false
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return false
+	}
+	return true
+}
+
+func NewSiteHandler(service *sitesvc.Service, deployService *deploysvc.Service, teamService *teamsvc.Service) *SiteHandler {
+	return &SiteHandler{service: service, deployService: deployService, teamService: teamService}
 }
 
 func (h *SiteHandler) Create(c *gin.Context) {
@@ -59,6 +99,10 @@ func (h *SiteHandler) List(c *gin.Context) {
 }
 
 func (h *SiteHandler) GetByID(c *gin.Context) {
+	if !h.authorizeSite(c, c.Param("id"), false) {
+		return
+	}
+
 	site, err := h.service.GetByID(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -74,6 +118,10 @@ func (h *SiteHandler) GetByID(c *gin.Context) {
 }
 
 func (h *SiteHandler) Update(c *gin.Context) {
+	if !h.authorizeSite(c, c.Param("id"), true) {
+		return
+	}
+
 	var req updateSiteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
@@ -105,6 +153,10 @@ func (h *SiteHandler) Update(c *gin.Context) {
 }
 
 func (h *SiteHandler) Delete(c *gin.Context) {
+	if !h.authorizeSite(c, c.Param("id"), true) {
+		return
+	}
+
 	err := h.service.Delete(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -120,6 +172,10 @@ func (h *SiteHandler) Delete(c *gin.Context) {
 }
 
 func (h *SiteHandler) Deploy(c *gin.Context) {
+	if !h.authorizeSite(c, c.Param("id"), true) {
+		return
+	}
+
 	_ = h.service
 
 	if err := h.deployService.EnqueueDeploy(c.Request.Context(), c.Param("id")); err != nil {

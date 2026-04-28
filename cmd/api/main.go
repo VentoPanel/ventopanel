@@ -141,8 +141,8 @@ func buildRouter(
 
 	healthHandler := httptransport.NewHealthHandler()
 	metricsHandler := httptransport.NewMetricsHandler()
-	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService)
-	siteHandler := httptransport.NewSiteHandler(siteService, deployService)
+	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService)
+	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService)
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)
 	auditHandler := httptransport.NewAuditHandler(auditService)
