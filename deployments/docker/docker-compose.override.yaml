@@ -1,0 +1,27 @@
+services:
+  api:
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      AUTH_ALLOW_HEADER_FALLBACK: "false"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  postgres:
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  redis:
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

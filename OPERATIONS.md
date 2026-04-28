@@ -8,21 +8,30 @@ Start/update stack:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml up -d --build
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  up -d --build
 ```
 
 Stop stack:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml down
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  down
 ```
 
 Restart API only:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml restart api
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  restart api
 ```
 
 ## 2) Health and Smoke Checks
@@ -31,13 +40,49 @@ Container status:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml ps
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  ps
 ```
 
 API health:
 
 ```bash
 curl -sS http://127.0.0.1:8080/api/v1/health | jq .
+```
+
+Metrics endpoint:
+
+```bash
+curl -sS http://127.0.0.1:8080/metrics | head
+```
+
+ACL deny smoke (v0.1.4+):
+
+```bash
+# 1) create JWT with team_id that has no grants
+TOKEN="<prod-jwt>"
+
+# 2) should be 403 (deny path)
+curl -sS -o /tmp/acl-deny.json -w "ACL_DENY:%{http_code}\n" \
+  -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8080/api/v1/sites/<site_id_without_grant>
+
+# 3) metric should include acl denies
+curl -sS http://127.0.0.1:8080/metrics | grep ventopanel_acl_denied_total
+
+# 4) audit should contain access_denied rows
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  exec -T postgres \
+  psql -U vento -d ventopanel -c \
+  "SELECT resource_type, resource_id, to_status, reason, created_at
+   FROM status_events
+   WHERE to_status='access_denied'
+   ORDER BY created_at DESC
+   LIMIT 10;"
 ```
 
 Security sanity in production mode:
@@ -59,14 +104,20 @@ Tail API logs:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml logs -f api
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  logs -f api
 ```
 
 Last 200 lines all services:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml logs --tail=200
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  logs --tail=200
 ```
 
 Useful checks:
@@ -106,7 +157,10 @@ After restore:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml restart api
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  restart api
 curl -sS http://127.0.0.1:8080/api/v1/health | jq .
 ```
 
@@ -125,5 +179,8 @@ When changing `.env`, rebuild/restart:
 
 ```bash
 cd /root/ventopanel
-docker compose -f deployments/docker/docker-compose.yaml up -d --build
+docker compose \
+  -f deployments/docker/docker-compose.yaml \
+  -f deployments/docker/docker-compose.override.yaml \
+  up -d --build
 ```

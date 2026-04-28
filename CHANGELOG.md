@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.5 - 2026-04-28
+
+### Added
+
+- Added `deployments/docker/docker-compose.override.yaml` with production-safe defaults (`restart: unless-stopped`) and Docker json-file log rotation for `api`, `postgres`, and `redis`.
+- Expanded `OPERATIONS.md` with merged compose commands (`base + override`) and a post-release ACL deny smoke procedure covering health, metrics, and audit verification.
+
 ## v0.1.4 - 2026-04-28
 
 ### Added
