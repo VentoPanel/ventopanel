@@ -296,3 +296,21 @@ func (h *ServerHandler) RenewSSL(c *gin.Context) {
 		"task":      "ssl:renew",
 	})
 }
+
+func (h *ServerHandler) GetStats(c *gin.Context) {
+	if !h.authorizeServer(c, c.Param("id"), false) {
+		return
+	}
+
+	stats, err := h.service.GetStats(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			c.JSON(http.StatusNotFound, errorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}

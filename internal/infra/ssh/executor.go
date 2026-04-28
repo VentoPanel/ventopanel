@@ -1,9 +1,11 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -37,6 +39,31 @@ func (e *Executor) Run(ctx context.Context, server domain.Server, command string
 	}
 
 	return nil
+}
+
+// RunOutput runs a single command and returns its combined stdout+stderr output.
+func (e *Executor) RunOutput(ctx context.Context, server domain.Server, command string) (string, error) {
+	client, err := e.newClient(ctx, server)
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("create ssh session: %w", err)
+	}
+	defer session.Close()
+
+	var buf bytes.Buffer
+	session.Stdout = &buf
+	session.Stderr = &buf
+
+	if err := session.Run(command); err != nil {
+		return "", fmt.Errorf("run remote command: %w", err)
+	}
+
+	return strings.TrimSpace(buf.String()), nil
 }
 
 func (e *Executor) RunScript(ctx context.Context, server domain.Server, commands []string) error {

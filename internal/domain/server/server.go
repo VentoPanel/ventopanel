@@ -30,8 +30,22 @@ type Repository interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// ServerStats holds live resource usage pulled from the remote server via SSH.
+type ServerStats struct {
+	CPUCores   int     `json:"cpu_cores"`
+	LoadAvg1   float64 `json:"load_avg_1"`
+	RAMTotalMB int64   `json:"ram_total_mb"`
+	RAMUsedMB  int64   `json:"ram_used_mb"`
+	DiskTotal  string  `json:"disk_total"`
+	DiskUsed   string  `json:"disk_used"`
+	DiskFree   string  `json:"disk_free"`
+	DiskPct    string  `json:"disk_pct"`
+	Uptime     string  `json:"uptime"`
+}
+
 type SSHExecutor interface {
 	Run(ctx context.Context, server Server, command string) error
+	RunOutput(ctx context.Context, server Server, command string) (string, error)
 	RunScript(ctx context.Context, server Server, commands []string) error
 	TestConnection(ctx context.Context, server Server) error
 }

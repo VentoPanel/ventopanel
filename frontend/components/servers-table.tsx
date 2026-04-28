@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plug, Wrench } from "lucide-react";
+import { Pencil, Trash2, Plug, Wrench, ExternalLink } from "lucide-react";
 import { type Server } from "@/lib/api";
 import { useServers } from "@/hooks/use-servers";
 import {
@@ -104,7 +105,15 @@ export function ServersTable() {
         <TableBody>
           {servers.map((s) => (
             <TableRow key={s.ID}>
-              <TableCell className="font-medium">{s.Name}</TableCell>
+              <TableCell className="font-medium">
+                <Link
+                  href={`/servers/${s.ID}`}
+                  className="flex items-center gap-1 hover:underline"
+                >
+                  {s.Name}
+                  <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                </Link>
+              </TableCell>
               <TableCell className="font-mono text-xs">
                 {s.Host}:{s.Port}
               </TableCell>

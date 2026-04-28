@@ -136,6 +136,18 @@ export async function fetchAuditEvents(params: {
   return apiFetch<AuditPage>(`/audit?${qs.toString()}`);
 }
 
+export interface ServerStats {
+  cpu_cores: number;
+  load_avg_1: number;
+  ram_total_mb: number;
+  ram_used_mb: number;
+  disk_total: string;
+  disk_used: string;
+  disk_free: string;
+  disk_pct: string;
+  uptime: string;
+}
+
 // Servers
 export async function fetchServers(): Promise<Server[]> {
   const data = await apiFetch<ListResponse<Server>>("/servers");
@@ -161,6 +173,10 @@ export async function updateServer(
 
 export async function deleteServer(id: string): Promise<void> {
   return apiFetch<void>(`/servers/${id}`, { method: "DELETE" });
+}
+
+export async function fetchServerStats(id: string): Promise<ServerStats> {
+  return apiFetch<ServerStats>(`/servers/${id}/stats`);
 }
 
 export async function connectServer(id: string): Promise<Server> {

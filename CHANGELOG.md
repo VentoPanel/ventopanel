@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.12 - 2026-04-28
+
+### Added
+
+- `GET /api/v1/servers/:id/stats` — new endpoint that SSHes into the server and returns live CPU cores, load average, RAM usage, disk usage, and uptime.
+- `RunOutput` method on SSH executor returning command stdout/stderr as a string.
+- `ServerStats` domain type.
+- Frontend: `/servers/[id]` detail page with:
+  - Server info cards (provider, SSH user, created date).
+  - Live monitoring cards: CPU (cores + load), Memory (used/total bar), Disk (used/total bar, color-coded), Uptime.
+  - Connect / Provision action buttons.
+  - Auto-refresh every 30 seconds with `RefreshIndicator`.
+- Server name in the servers table is now a clickable link to the detail page.
+
 ## v0.1.11 - 2026-04-28
 
 ### Added

@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 
 	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
@@ -135,6 +137,81 @@ func (s *Service) Connect(ctx context.Context, id string) (*domain.Server, error
 	s.writeAudit("server", server.ID, prev, server.Status, "ssh_connect_success", "connect")
 
 	return s.repo.GetByID(ctx, server.ID)
+}
+
+// GetStats fetches live resource usage from the remote server via SSH.
+// The server must be in a connected/ready state.
+func (s *Service) GetStats(ctx context.Context, id string) (*domain.ServerStats, error) {
+	server, err := s.repo.GetByID(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+
+	// Single compound command — one SSH session, five output lines:
+	//  line 0: nproc (CPU core count)
+	//  line 1: load avg 1-min (from /proc/loadavg)
+	//  line 2: RAM total MB
+	//  line 3: RAM used MB
+	//  line 4-7: disk total / used / free / pct  (space-separated)
+	//  last line: uptime -p
+	script := strings.Join([]string{
+		`nproc`,
+		`awk '{print $1}' /proc/loadavg`,
+		`free -m | awk '/^Mem:/{print $2}'`,
+		`free -m | awk '/^Mem:/{print $3}'`,
+		`df -h / | tail -1 | awk '{print $2,$3,$4,$5}'`,
+		`uptime -p`,
+	}, " && echo '---' && ")
+
+	out, err := s.sshExecutor.RunOutput(ctx, *server, script)
+	if err != nil {
+		return nil, fmt.Errorf("fetch server stats: %w", err)
+	}
+
+	return parseStats(out), nil
+}
+
+func parseStats(raw string) *domain.ServerStats {
+	lines := strings.Split(raw, "---")
+	// flatten and split by newline
+	var parts []string
+	for _, l := range lines {
+		for _, item := range strings.Split(strings.TrimSpace(l), "\n") {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				parts = append(parts, item)
+			}
+		}
+	}
+
+	stats := &domain.ServerStats{}
+
+	if len(parts) > 0 {
+		stats.CPUCores, _ = strconv.Atoi(parts[0])
+	}
+	if len(parts) > 1 {
+		stats.LoadAvg1, _ = strconv.ParseFloat(parts[1], 64)
+	}
+	if len(parts) > 2 {
+		stats.RAMTotalMB, _ = strconv.ParseInt(parts[2], 10, 64)
+	}
+	if len(parts) > 3 {
+		stats.RAMUsedMB, _ = strconv.ParseInt(parts[3], 10, 64)
+	}
+	if len(parts) > 4 {
+		disk := strings.Fields(parts[4])
+		if len(disk) >= 4 {
+			stats.DiskTotal = disk[0]
+			stats.DiskUsed = disk[1]
+			stats.DiskFree = disk[2]
+			stats.DiskPct = disk[3]
+		}
+	}
+	if len(parts) > 5 {
+		stats.Uptime = parts[5]
+	}
+
+	return stats
 }
 
 func (s *Service) writeAudit(resourceType, resourceID, from, to, reason, taskID string) {
