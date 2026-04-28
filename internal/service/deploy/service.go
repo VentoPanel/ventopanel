@@ -16,7 +16,6 @@ import (
 	"github.com/your-org/ventopanel/internal/domain/lifecycle"
 	"github.com/your-org/ventopanel/internal/domain/tasklog"
 	"github.com/your-org/ventopanel/internal/infra/lock"
-	sitedomain "github.com/your-org/ventopanel/internal/domain/site"
 )
 
 const TaskDeploySite = "deploy:site"
