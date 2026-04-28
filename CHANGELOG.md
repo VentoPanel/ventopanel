@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.16 - 2026-04-28
+
+### Added
+
+- Dashboard completely rewritten as a true overview page:
+  - 4 stat cards: **Servers** (total / connected / errors), **Sites** (total / deployed / errors), **Recent Errors** (count from last 8 audit events), **Auto-refresh interval**.
+  - Error counts shown in red when non-zero; cards link directly to their respective pages.
+  - **Recent Activity** feed: last 8 audit events with resource type badge, status badge, reason, and "X ago" relative timestamp (`date-fns`).
+  - **Quick Lists**: servers and sites preview (top 5 each) with status badges and links to detail pages.
+- `useRecentAudit` hook — lightweight `useQuery` (no infinite scroll) polling audit events every 30 s.
+- Added `date-fns` dependency for relative time formatting.
+
+### Changed
+
+- Dashboard no longer renders full `ServersTable` / `SitesTable` — those live on their own pages. Dashboard focuses on summary and recent activity.
+
 ## v0.1.15 - 2026-04-28
 
 ### Added
