@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.7 - 2026-04-28
+
+### Added
+
+- Frontend scaffolding under `frontend/` using Next.js 15 App Router, TypeScript, Tailwind CSS 3, Shadcn UI primitives, and TanStack Query v5.
+- Dashboard page with stat cards (server/site counts), servers table, and sites table.
+- Servers and Sites list pages with status badges (`success`, `warning`, `destructive`).
+- Login page: JWT token input stored in `localStorage`, redirects to dashboard.
+- Route guard in dashboard layout: unauthenticated users are redirected to `/login`.
+- API client in `frontend/lib/api.ts`: reads token from `localStorage`, adds `Authorization` header, redirects on 401/403.
+- `frontend/Dockerfile` with multi-stage build (`node:20-alpine`) and standalone Next.js output.
+- `frontend` service added to `deployments/docker/docker-compose.yaml` and `docker-compose.override.yaml` (port 3000, log rotation, restart policy).
+
 ## v0.1.6 - 2026-04-28
 
 ### Added
