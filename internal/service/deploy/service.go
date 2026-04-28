@@ -167,19 +167,17 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		return err
 	}
 
-	appPort := derivePort(site.ID)
-	baseDir := fmt.Sprintf("/opt/ventopanel/sites/%s", site.ID)
-	composeContent := composeTemplate(site, appPort)
-	nginxContent := nginxTemplate(site.Domain, appPort)
+	webRoot := fmt.Sprintf("/var/www/vento_%s", site.ID)
+	htmlContent := staticHTML(site.Domain)
+	nginxContent := nginxStaticTemplate(site.Domain, webRoot)
 
 	// Use base64-encoded writes to avoid heredoc issues over SSH exec channels.
-	composeB64 := base64.StdEncoding.EncodeToString([]byte(composeContent))
+	htmlB64 := base64.StdEncoding.EncodeToString([]byte(htmlContent))
 	nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
 
 	commands := []struct{ name, cmd string }{
-		{"mkdir", fmt.Sprintf("mkdir -p %s", baseDir)},
-		{"write_compose", fmt.Sprintf("echo %s | base64 -d > %s/docker-compose.yml", composeB64, baseDir)},
-		{"docker_up", fmt.Sprintf("docker compose -f %s/docker-compose.yml up -d --pull missing 2>&1", baseDir)},
+		{"mkdir", fmt.Sprintf("mkdir -p %s", webRoot)},
+		{"write_html", fmt.Sprintf("echo %s | base64 -d > %s/index.html", htmlB64, webRoot)},
 		{"write_nginx", fmt.Sprintf("echo %s | base64 -d > /etc/nginx/sites-available/vento_%s.conf", nginxB64, site.ID)},
 		{"link_nginx", fmt.Sprintf("ln -sfn /etc/nginx/sites-available/vento_%s.conf /etc/nginx/sites-enabled/vento_%s.conf", site.ID, site.ID)},
 		{"nginx_test", "nginx -t 2>&1"},
@@ -263,43 +261,32 @@ func (s *Service) writeAudit(resourceType, resourceID, from, to, reason, taskID 
 	})
 }
 
-func derivePort(siteID string) int {
-	sum := 0
-	for _, r := range siteID {
-		sum += int(r)
-	}
 
-	return 20000 + (sum % 10000)
+// staticHTML returns a minimal HTML landing page for the deployed site.
+func staticHTML(domain string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>%s</title>
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc}
+.box{text-align:center;padding:2rem 3rem;border-radius:12px;background:#fff;box-shadow:0 2px 16px rgba(0,0,0,.08)}
+h1{margin:0 0 .5rem;font-size:1.8rem}p{color:#64748b;margin:0}</style></head>
+<body><div class="box"><h1>%s</h1><p>Deployed via VentoPanel</p></div></body>
+</html>
+`, domain, domain)
 }
 
-func composeTemplate(site *sitedomain.Site, appPort int) string {
-	runtime := strings.ToLower(strings.TrimSpace(site.Runtime))
-
-	// Use YAML block literal (|-) for command to avoid YAML plain-scalar
-	// restrictions (": " in content, backslash-quote confusion, etc.).
-	if strings.Contains(runtime, "php") {
-		phpCmd := `printf '<?php echo "VentoPanel site"; ?>' > /var/www/html/index.php && php -S 0.0.0.0:8080 -t /var/www/html`
-		return fmt.Sprintf("services:\n  app:\n    image: php:8.3-fpm-alpine\n    container_name: ventopanel_%s\n    restart: unless-stopped\n    command:\n      - sh\n      - -c\n      - %q\n    ports:\n      - \"%d:8080\"\n",
-			site.ID, phpCmd, appPort)
-	}
-
-	nodeCmd := `printf 'const h=require("http");h.createServer((q,r)=>r.end("VentoPanel site")).listen(8080);' > /app/server.js && node /app/server.js`
-	return fmt.Sprintf("services:\n  app:\n    image: node:20-alpine\n    container_name: ventopanel_%s\n    restart: unless-stopped\n    command:\n      - sh\n      - -c\n      - %q\n    ports:\n      - \"%d:8080\"\n",
-		site.ID, nodeCmd, appPort)
-}
-
-func nginxTemplate(domainName string, appPort int) string {
+// nginxStaticTemplate serves files from webRoot directly — no Docker, no rate limits.
+func nginxStaticTemplate(domain, webRoot string) string {
 	return fmt.Sprintf(`server {
     listen 80;
     server_name %s;
 
+    root %s;
+    index index.html;
+
     location / {
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:%d;
+        try_files $uri $uri/ =404;
     }
 }
-`, domainName, appPort)
+`, domain, webRoot)
 }
