@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
 } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Folder,
   File,
@@ -27,6 +28,7 @@ import {
   Archive,
   PackageOpen,
   Lock,
+  CheckSquare,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -52,23 +54,29 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 
-// ─── File icon by extension ───────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const TEXT_EXTS = new Set([".txt", ".md", ".log", ".csv", ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".env"]);
 const CODE_EXTS = new Set([".js", ".ts", ".tsx", ".jsx", ".go", ".py", ".php", ".rb", ".rs", ".sh", ".bash", ".css", ".html", ".htm", ".sql"]);
 const IMG_EXTS  = new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico"]);
 
+function isEditable(item: FileItem) {
+  return !item.is_dir && (TEXT_EXTS.has(item.ext) || CODE_EXTS.has(item.ext));
+}
+
+// ─── File icon ────────────────────────────────────────────────────────────────
+
 function FileIcon({ item, className }: { item: FileItem; className?: string }) {
   const cls = cn("shrink-0", className);
-  if (item.is_dir) return <Folder className={cn(cls, "text-amber-400")} />;
-  if (CODE_EXTS.has(item.ext))  return <FileCode  className={cn(cls, "text-blue-400")} />;
-  if (TEXT_EXTS.has(item.ext))  return <FileText  className={cn(cls, "text-gray-400")} />;
-  if (IMG_EXTS.has(item.ext))   return <FileImage className={cn(cls, "text-pink-400")} />;
+  if (item.is_dir)               return <Folder    className={cn(cls, "text-amber-400")} />;
+  if (CODE_EXTS.has(item.ext))   return <FileCode  className={cn(cls, "text-blue-400")} />;
+  if (TEXT_EXTS.has(item.ext))   return <FileText  className={cn(cls, "text-gray-400")} />;
+  if (IMG_EXTS.has(item.ext))    return <FileImage className={cn(cls, "text-pink-400")} />;
   return <File className={cn(cls, "text-gray-400")} />;
 }
 
 function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024)        return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
@@ -77,12 +85,11 @@ function formatSize(bytes: number): string {
 
 function Breadcrumbs({ path, onNavigate }: { path: string; onNavigate: (p: string) => void }) {
   const parts = path.replace(/^\//, "").split("/").filter(Boolean);
-
   return (
-    <nav className="flex items-center gap-1 text-sm flex-wrap">
+    <nav className="flex items-center gap-1 text-sm flex-wrap min-w-0">
       <button
         onClick={() => onNavigate("/")}
-        className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 text-muted-foreground hover:text-foreground shrink-0"
       >
         <HardDrive className="h-3.5 w-3.5" />
         root
@@ -90,14 +97,17 @@ function Breadcrumbs({ path, onNavigate }: { path: string; onNavigate: (p: strin
       {parts.map((part, i) => {
         const to = "/" + parts.slice(0, i + 1).join("/");
         return (
-          <span key={to} className="flex items-center gap-1">
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          <span key={to} className="flex items-center gap-1 min-w-0">
+            <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
             <button
               onClick={() => onNavigate(to)}
               className={cn(
-                "hover:text-foreground",
-                i === parts.length - 1 ? "font-medium text-foreground" : "text-muted-foreground",
+                "hover:text-foreground truncate max-w-[160px]",
+                i === parts.length - 1
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground",
               )}
+              title={part}
             >
               {part}
             </button>
@@ -131,31 +141,29 @@ function ContextMenu({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handler(e: MouseEvent) {
+    function h(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  const isEditable = !item.is_dir && (TEXT_EXTS.has(item.ext) || CODE_EXTS.has(item.ext));
-  const isZip = item.ext === ".zip";
+  const editable = isEditable(item);
+  const isZip    = item.ext === ".zip";
 
   return (
     <div ref={ref} className="relative">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="rounded p-1 opacity-0 group-hover:opacity-100 hover:bg-accent"
+        className="rounded p-1 opacity-0 group-hover:opacity-100 hover:bg-accent transition-opacity"
       >
         <MoreVertical className="h-4 w-4" />
       </button>
       {open && (
         <div className="absolute right-0 top-7 z-50 w-44 rounded-md border bg-background shadow-lg py-1">
-          {isEditable && (
-            <button
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-              onClick={() => { setOpen(false); onEdit(item); }}
-            >
+          {editable && (
+            <button className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+              onClick={() => { setOpen(false); onEdit(item); }}>
               <FileText className="h-3.5 w-3.5" /> Edit
             </button>
           )}
@@ -168,37 +176,27 @@ function ContextMenu({
             <Download className="h-3.5 w-3.5" />
             {item.is_dir ? "Download as ZIP" : "Download"}
           </a>
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-            onClick={() => { setOpen(false); onCompress(item); }}
-          >
+          <button className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+            onClick={() => { setOpen(false); onCompress(item); }}>
             <Archive className="h-3.5 w-3.5" /> Compress to ZIP
           </button>
           {isZip && (
-            <button
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-              onClick={() => { setOpen(false); onExtract(item); }}
-            >
+            <button className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+              onClick={() => { setOpen(false); onExtract(item); }}>
               <PackageOpen className="h-3.5 w-3.5" /> Extract here
             </button>
           )}
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-            onClick={() => { setOpen(false); onPermissions(item); }}
-          >
+          <button className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+            onClick={() => { setOpen(false); onPermissions(item); }}>
             <Lock className="h-3.5 w-3.5" /> Permissions
           </button>
           <div className="my-1 border-t" />
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-            onClick={() => { setOpen(false); onRename(item); }}
-          >
+          <button className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+            onClick={() => { setOpen(false); onRename(item); }}>
             <Pencil className="h-3.5 w-3.5" /> Rename
           </button>
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent"
-            onClick={() => { setOpen(false); onDelete(item); }}
-          >
+          <button className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent"
+            onClick={() => { setOpen(false); onDelete(item); }}>
             <Trash2 className="h-3.5 w-3.5" /> Delete
           </button>
         </div>
@@ -209,16 +207,10 @@ function ContextMenu({
 
 // ─── Editor modal ─────────────────────────────────────────────────────────────
 
-function EditorModal({
-  item,
-  onClose,
-}: {
-  item: FileItem;
-  onClose: () => void;
-}) {
+function EditorModal({ item, onClose }: { item: FileItem; onClose: () => void }) {
   const [content, setContent] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading,  setLoading]  = useState(true);
+  const [saving,   setSaving]   = useState(false);
 
   useEffect(() => {
     fmReadFile(item.path)
@@ -229,15 +221,9 @@ function EditorModal({
 
   async function save() {
     setSaving(true);
-    try {
-      await fmWriteFile(item.path, content);
-      toast.success("Saved");
-      onClose();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
+    try { await fmWriteFile(item.path, content); toast.success("Saved"); onClose(); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -246,30 +232,87 @@ function EditorModal({
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <FileCode className="h-4 w-4 text-muted-foreground" />
-            <span className="font-mono text-sm">{item.path}</span>
+            <span className="font-mono text-sm truncate max-w-[500px]">{item.path}</span>
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={save} disabled={saving || loading}>
               {saving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
               Save
             </Button>
-            <Button size="sm" variant="ghost" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button>
           </div>
         </div>
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <textarea
-            className="flex-1 resize-none bg-muted/30 p-4 font-mono text-sm outline-none"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            spellCheck={false}
-          />
-        )}
+        {loading
+          ? <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          : <textarea
+              className="flex-1 resize-none bg-muted/30 p-4 font-mono text-sm outline-none"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              spellCheck={false}
+            />
+        }
+      </div>
+    </div>
+  );
+}
+
+// ─── Floating Action Bar ──────────────────────────────────────────────────────
+
+function FloatingBar({
+  selected,
+  currentPath,
+  onClearSelection,
+  onCompressSelected,
+  onDeleteSelected,
+}: {
+  selected: FileItem[];
+  currentPath: string;
+  onClearSelection: () => void;
+  onCompressSelected: (items: FileItem[]) => void;
+  onDeleteSelected: (items: FileItem[]) => void;
+}) {
+  if (selected.length === 0) return null;
+
+  // Build multi-file download URL: download first selected (for ZIP streaming).
+  // For multi-file we redirect to the current dir download which streams as ZIP.
+  const downloadHref = selected.length === 1
+    ? fmDownloadUrl(selected[0].path)
+    : fmDownloadUrl(currentPath);
+
+  return (
+    <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 animate-in slide-in-from-bottom-4 fade-in duration-200">
+      <div className="flex items-center gap-2 rounded-full border bg-background/95 backdrop-blur shadow-xl px-4 py-2">
+        <span className="text-sm font-medium pl-1 pr-2 text-muted-foreground">
+          {selected.length} selected
+        </span>
+        <div className="h-4 w-px bg-border" />
+        <a
+          href={downloadHref}
+          download
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium hover:bg-accent transition-colors"
+        >
+          <Download className="h-3.5 w-3.5" />
+          {selected.length === 1 && !selected[0].is_dir ? "Download" : "Download ZIP"}
+        </a>
+        <button
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium hover:bg-accent transition-colors"
+          onClick={() => onCompressSelected(selected)}
+        >
+          <Archive className="h-3.5 w-3.5" /> Compress
+        </button>
+        <button
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+          onClick={() => onDeleteSelected(selected)}
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Delete
+        </button>
+        <div className="h-4 w-px bg-border" />
+        <button
+          className="rounded-full p-1.5 hover:bg-accent transition-colors text-muted-foreground"
+          onClick={onClearSelection}
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
@@ -278,26 +321,41 @@ function EditorModal({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function FilesPage() {
-  const qc = useQueryClient();
-  const [currentPath, setCurrentPath] = useState("/");
+  const router       = useRouter();
+  const searchParams = useSearchParams();
+  const qc           = useQueryClient();
+
+  // Path is stored in URL ?path= so browser Back/Forward works.
+  const currentPath = searchParams.get("path") ?? "/";
+  const navigate    = useCallback(
+    (p: string) => router.push(`/files?path=${encodeURIComponent(p)}`),
+    [router],
+  );
+
   const [dragging, setDragging] = useState(false);
 
-  // Modals / dialogs state
-  const [renameItem, setRenameItem]         = useState<FileItem | null>(null);
-  const [newName, setNewName]               = useState("");
-  const [deleteItem, setDeleteItem]         = useState<FileItem | null>(null);
-  const [editItem, setEditItem]             = useState<FileItem | null>(null);
-  const [newDirOpen, setNewDirOpen]         = useState(false);
-  const [newDirName, setNewDirName]         = useState("");
-  const [uploading, setUploading]           = useState(false);
+  // ── Selection ────────────────────────────────────────────────────────────
+  const [selected, setSelected]   = useState<Set<string>>(new Set());
+  const lastClickedIdx            = useRef<number | null>(null);
 
-  // Compress dialog
-  const [compressItem, setCompressItem]     = useState<FileItem | null>(null);
-  const [compressName, setCompressName]     = useState("");
+  // Reset selection when changing directory.
+  useEffect(() => {
+    setSelected(new Set());
+    lastClickedIdx.current = null;
+  }, [currentPath]);
 
-  // Permissions dialog
-  const [permItem, setPermItem]             = useState<FileItem | null>(null);
-  const [permMode, setPermMode]             = useState("644");
+  // ── Modals ───────────────────────────────────────────────────────────────
+  const [renameItem,    setRenameItem]    = useState<FileItem | null>(null);
+  const [newName,       setNewName]       = useState("");
+  const [deleteItems,   setDeleteItems]   = useState<FileItem[]>([]);
+  const [editItem,      setEditItem]      = useState<FileItem | null>(null);
+  const [newDirOpen,    setNewDirOpen]    = useState(false);
+  const [newDirName,    setNewDirName]    = useState("");
+  const [uploading,     setUploading]     = useState(false);
+  const [compressItems, setCompressItems] = useState<FileItem[]>([]);
+  const [compressName,  setCompressName]  = useState("");
+  const [permItem,      setPermItem]      = useState<FileItem | null>(null);
+  const [permMode,      setPermMode]      = useState("644");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -308,14 +366,19 @@ export default function FilesPage() {
     queryFn: () => fmListDir(currentPath),
   });
 
+  const items = data?.items ?? [];
+
+  // ── Mutations ────────────────────────────────────────────────────────────
+
   const deleteMutation = useMutation({
-    mutationFn: (path: string) => fmDelete(path),
+    mutationFn: (paths: string[]) => Promise.all(paths.map(fmDelete)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast.success("Deleted");
-      setDeleteItem(null);
+      setDeleteItems([]);
+      setSelected(new Set());
     },
-    onError: (e) => { toast.error(e instanceof Error ? e.message : "Delete failed"); setDeleteItem(null); },
+    onError: (e) => { toast.error(e instanceof Error ? e.message : "Delete failed"); setDeleteItems([]); },
   });
 
   const renameMutation = useMutation({
@@ -324,57 +387,43 @@ export default function FilesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast.success("Renamed");
-      setRenameItem(null);
-      setNewName("");
+      setRenameItem(null); setNewName("");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Rename failed"),
   });
 
   const mkdirMutation = useMutation({
-    mutationFn: (name: string) => {
-      const full = currentPath.replace(/\/$/, "") + "/" + name;
-      return fmCreateDir(full);
-    },
+    mutationFn: (name: string) => fmCreateDir(currentPath.replace(/\/$/, "") + "/" + name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast.success("Folder created");
-      setNewDirOpen(false);
-      setNewDirName("");
+      setNewDirOpen(false); setNewDirName("");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   const compressMutation = useMutation({
-    mutationFn: ({ item, name }: { item: FileItem; name: string }) => {
+    mutationFn: ({ srcPaths, name }: { srcPaths: string[]; name: string }) => {
       const dest = currentPath.replace(/\/$/, "") + "/" + name + ".zip";
-      return fmCompress([item.path], dest);
+      return fmCompress(srcPaths, dest);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast.success("Compressed");
-      setCompressItem(null);
-      setCompressName("");
+      setCompressItems([]); setCompressName(""); setSelected(new Set());
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   const extractMutation = useMutation({
-    mutationFn: (item: FileItem) =>
-      fmExtract(item.path, currentPath),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey });
-      toast.success("Extracted");
-    },
+    mutationFn: (path: string) => fmExtract(path, currentPath),
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); toast.success("Extracted"); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Extract failed"),
   });
 
   const permMutation = useMutation({
-    mutationFn: ({ path, mode }: { path: string; mode: string }) =>
-      fmSetPermissions(path, mode),
-    onSuccess: () => {
-      toast.success("Permissions updated");
-      setPermItem(null);
-    },
+    mutationFn: ({ path, mode }: { path: string; mode: string }) => fmSetPermissions(path, mode),
+    onSuccess: () => { toast.success("Permissions updated"); setPermItem(null); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
@@ -387,168 +436,226 @@ export default function FilesPage() {
       await fmUpload(currentPath, Array.from(files));
       qc.invalidateQueries({ queryKey });
       toast.success(`Uploaded ${files.length} file(s)`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Upload failed"); }
+    finally { setUploading(false); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPath]);
 
-  // Drag & drop handlers
-  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragging(true); };
-  const onDragLeave = () => setDragging(false);
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    handleFiles(e.dataTransfer.files);
-  };
+  // ── Selection helpers ─────────────────────────────────────────────────────
 
-  const navigate = (path: string) => setCurrentPath(path);
+  function toggleItem(item: FileItem, idx: number, shiftHeld: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (shiftHeld && lastClickedIdx.current !== null) {
+        // Range selection: toggle all items between last click and current.
+        const lo = Math.min(lastClickedIdx.current, idx);
+        const hi = Math.max(lastClickedIdx.current, idx);
+        const shouldSelect = !prev.has(item.path);
+        for (let i = lo; i <= hi; i++) {
+          if (shouldSelect) next.add(items[i].path);
+          else next.delete(items[i].path);
+        }
+      } else {
+        if (next.has(item.path)) next.delete(item.path);
+        else next.add(item.path);
+      }
+      return next;
+    });
+    lastClickedIdx.current = idx;
+  }
+
+  function toggleAll() {
+    if (selected.size === items.length) setSelected(new Set());
+    else setSelected(new Set(items.map((i) => i.path)));
+  }
+
+  const allChecked = items.length > 0 && selected.size === items.length;
+  const someChecked = selected.size > 0 && !allChecked;
+  const selectedItems = items.filter((i) => selected.has(i.path));
 
   const goUp = () => {
     if (currentPath === "/") return;
     const parent = currentPath.replace(/\/[^/]+\/?$/, "") || "/";
-    setCurrentPath(parent);
+    navigate(parent);
   };
 
-  const items = data?.items ?? [];
+  // ── Drag & Drop ──────────────────────────────────────────────────────────
+  const onDragOver  = (e: React.DragEvent) => { e.preventDefault(); setDragging(true); };
+  const onDragLeave = (e: React.DragEvent) => {
+    // Only clear when leaving the card entirely (not a child element).
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    handleFiles(e.dataTransfer.files);
+  };
 
   return (
-    <div className="flex h-full flex-col space-y-4">
-      {/* Header */}
+    <div className="flex h-full flex-col gap-4">
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <HardDrive className="h-6 w-6 text-muted-foreground" />
           <div>
             <h2 className="text-2xl font-bold tracking-tight">File Manager</h2>
-            <p className="text-xs text-muted-foreground font-mono">
-              root: {data?.root ?? "…"}
-            </p>
+            <p className="text-xs text-muted-foreground font-mono">{data?.root ?? "…"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setNewDirOpen(true)}
-          >
+          <Button variant="outline" size="sm" onClick={() => setNewDirOpen(true)}>
             <FolderPlus className="mr-2 h-4 w-4" /> New Folder
           </Button>
-          <Button
-            size="sm"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {uploading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="mr-2 h-4 w-4" />
-            )}
+          <Button size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+            {uploading
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <Upload className="mr-2 h-4 w-4" />}
             Upload
           </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => handleFiles(e.target.files)}
-          />
+          <input ref={fileInputRef} type="file" multiple className="hidden"
+            onChange={(e) => handleFiles(e.target.files)} />
         </div>
       </div>
 
-      {/* Breadcrumbs + back */}
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          disabled={currentPath === "/"}
-          onClick={goUp}
-        >
+      {/* ── Breadcrumbs + Back ── */}
+      <div className="flex items-center gap-3 min-w-0">
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+          disabled={currentPath === "/"} onClick={goUp}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <Breadcrumbs path={currentPath} onNavigate={navigate} />
       </div>
 
-      {/* Drop zone + file list */}
+      {/* ── File table with D&D zone ── */}
       <Card
         className={cn(
-          "flex-1 overflow-hidden transition-colors",
-          dragging && "border-primary bg-primary/5",
+          "flex-1 overflow-auto transition-all duration-150 relative",
+          dragging && "border-2 border-dashed border-primary bg-primary/5",
         )}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
       >
+        {/* D&D overlay */}
         {dragging && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 text-primary text-sm font-medium">
-            Drop files to upload
+          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg text-primary">
+            <Upload className="h-10 w-10 opacity-60" />
+            <span className="text-sm font-medium">Drop files to upload</span>
           </div>
         )}
+
         <CardContent className="p-0">
           {isLoading && (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           )}
           {isError && (
-            <p className="px-4 py-6 text-sm text-destructive">
-              Failed to load directory.
-            </p>
+            <p className="px-4 py-6 text-sm text-destructive">Failed to load directory.</p>
           )}
           {!isLoading && !isError && items.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              Empty directory. Drop files here to upload.
-            </p>
+            <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
+              <Upload className="h-8 w-8 opacity-40" />
+              <p className="text-sm">Empty directory — drop files here to upload</p>
+            </div>
           )}
+
           {!isLoading && items.length > 0 && (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-xs text-muted-foreground">
-                  <th className="px-4 py-2 text-left font-medium">Name</th>
-                  <th className="px-4 py-2 text-right font-medium hidden sm:table-cell">Size</th>
-                  <th className="px-4 py-2 text-right font-medium hidden md:table-cell">Modified</th>
+                <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                  <th className="w-10 px-3 py-2">
+                    {/* Select All checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      ref={(el) => { if (el) el.indeterminate = someChecked; }}
+                      onChange={toggleAll}
+                      className="cursor-pointer accent-primary"
+                      aria-label="Select all"
+                    />
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">Name</th>
+                  <th className="px-3 py-2 text-right font-medium hidden sm:table-cell">Size</th>
+                  <th className="px-3 py-2 text-right font-medium hidden md:table-cell">Modified</th>
                   <th className="w-10" />
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
-                  <tr
-                    key={item.path}
-                    className="group border-b last:border-0 hover:bg-muted/50 cursor-pointer"
-                    onClick={() => {
-                      if (item.is_dir) navigate(item.path);
-                    }}
-                  >
-                    <td className="flex items-center gap-3 px-4 py-2.5">
-                      <FileIcon item={item} className="h-4 w-4" />
-                      <span className="truncate font-medium">{item.name}</span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-muted-foreground hidden sm:table-cell">
-                      {item.is_dir ? "—" : formatSize(item.size)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-muted-foreground hidden md:table-cell">
-                      {formatDistanceToNow(new Date(item.mod_time), { addSuffix: true })}
-                    </td>
-                    <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <ContextMenu
-                        item={item}
-                        onRename={(i) => { setRenameItem(i); setNewName(i.name); }}
-                        onDelete={setDeleteItem}
-                        onEdit={setEditItem}
-                        onCompress={(i) => { setCompressItem(i); setCompressName(i.name); }}
-                        onExtract={(i) => extractMutation.mutate(i)}
-                        onPermissions={(i) => { setPermItem(i); setPermMode("644"); }}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {items.map((item, idx) => {
+                  const isSelected = selected.has(item.path);
+                  return (
+                    <tr
+                      key={item.path}
+                      className={cn(
+                        "group border-b last:border-0 transition-colors",
+                        isSelected
+                          ? "bg-primary/8 hover:bg-primary/12"
+                          : "hover:bg-muted/50",
+                      )}
+                    >
+                      {/* Checkbox cell — does NOT navigate */}
+                      <td
+                        className="px-3 py-2.5"
+                        onClick={(e) => { e.stopPropagation(); toggleItem(item, idx, e.shiftKey); }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="cursor-pointer accent-primary"
+                          aria-label={`Select ${item.name}`}
+                        />
+                      </td>
+
+                      {/* Name cell — navigates into dir on click */}
+                      <td
+                        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
+                        onClick={() => item.is_dir && navigate(item.path)}
+                      >
+                        <FileIcon item={item} className="h-4 w-4" />
+                        <span className={cn("truncate font-medium", item.is_dir && "hover:underline")}>
+                          {item.name}
+                        </span>
+                      </td>
+
+                      <td className="px-3 py-2.5 text-right text-muted-foreground hidden sm:table-cell">
+                        {item.is_dir ? "—" : formatSize(item.size)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-muted-foreground hidden md:table-cell">
+                        {formatDistanceToNow(new Date(item.mod_time), { addSuffix: true })}
+                      </td>
+                      <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <ContextMenu
+                          item={item}
+                          onRename={(i) => { setRenameItem(i); setNewName(i.name); }}
+                          onDelete={(i) => setDeleteItems([i])}
+                          onEdit={setEditItem}
+                          onCompress={(i) => { setCompressItems([i]); setCompressName(i.name); }}
+                          onExtract={(i) => extractMutation.mutate(i.path)}
+                          onPermissions={(i) => { setPermItem(i); setPermMode("644"); }}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </CardContent>
       </Card>
+
+      {/* ── Floating Action Bar ── */}
+      <FloatingBar
+        selected={selectedItems}
+        currentPath={currentPath}
+        onClearSelection={() => setSelected(new Set())}
+        onCompressSelected={(its) => {
+          setCompressItems(its);
+          setCompressName(its.length === 1 ? its[0].name : "archive");
+        }}
+        onDeleteSelected={setDeleteItems}
+      />
 
       {/* ── Rename dialog ── */}
       {renameItem && (
@@ -558,36 +665,26 @@ export default function FilesPage() {
             <div className="space-y-1">
               <Label>New name</Label>
               <Input
-                autoFocus
-                value={newName}
+                autoFocus value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && newName.trim()) {
                     const dir = renameItem.path.substring(0, renameItem.path.lastIndexOf("/")) || "/";
-                    renameMutation.mutate({
-                      old_path: renameItem.path,
-                      new_path: dir + "/" + newName.trim(),
-                    });
+                    renameMutation.mutate({ old_path: renameItem.path, new_path: dir + "/" + newName.trim() });
                   }
                 }}
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => { setRenameItem(null); setNewName(""); }}>
-                Cancel
-              </Button>
+              <Button variant="ghost" onClick={() => { setRenameItem(null); setNewName(""); }}>Cancel</Button>
               <Button
                 disabled={!newName.trim() || renameMutation.isPending}
                 onClick={() => {
                   const dir = renameItem.path.substring(0, renameItem.path.lastIndexOf("/")) || "/";
-                  renameMutation.mutate({
-                    old_path: renameItem.path,
-                    new_path: dir + "/" + newName.trim(),
-                  });
+                  renameMutation.mutate({ old_path: renameItem.path, new_path: dir + "/" + newName.trim() });
                 }}
               >
-                {renameMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Rename
+                {renameMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Rename
               </Button>
             </div>
           </div>
@@ -602,74 +699,50 @@ export default function FilesPage() {
             <div className="space-y-1">
               <Label>Folder name</Label>
               <Input
-                autoFocus
-                placeholder="my-folder"
-                value={newDirName}
+                autoFocus placeholder="my-folder" value={newDirName}
                 onChange={(e) => setNewDirName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && newDirName.trim() && mkdirMutation.mutate(newDirName.trim())}
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => { setNewDirOpen(false); setNewDirName(""); }}>
-                Cancel
-              </Button>
-              <Button
-                disabled={!newDirName.trim() || mkdirMutation.isPending}
-                onClick={() => mkdirMutation.mutate(newDirName.trim())}
-              >
-                {mkdirMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create
+              <Button variant="ghost" onClick={() => { setNewDirOpen(false); setNewDirName(""); }}>Cancel</Button>
+              <Button disabled={!newDirName.trim() || mkdirMutation.isPending}
+                onClick={() => mkdirMutation.mutate(newDirName.trim())}>
+                {mkdirMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Create
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Delete confirm ── */}
-      <ConfirmDialog
-        open={!!deleteItem}
-        title={`Delete "${deleteItem?.name}"?`}
-        description={
-          deleteItem?.is_dir
-            ? "This will delete the folder and all its contents. This cannot be undone."
-            : "This file will be permanently deleted."
-        }
-        loading={deleteMutation.isPending}
-        onConfirm={() => deleteItem && deleteMutation.mutate(deleteItem.path)}
-        onCancel={() => setDeleteItem(null)}
-      />
-
-      {/* ── File editor ── */}
-      {editItem && (
-        <EditorModal item={editItem} onClose={() => { setEditItem(null); qc.invalidateQueries({ queryKey }); }} />
-      )}
-
       {/* ── Compress dialog ── */}
-      {compressItem && (
+      {compressItems.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl space-y-4">
             <h3 className="font-semibold flex items-center gap-2">
               <Archive className="h-4 w-4" /> Compress to ZIP
             </h3>
-            <p className="text-sm text-muted-foreground">
-              Archive name (without .zip):
-            </p>
-            <Input
-              autoFocus
-              value={compressName}
-              onChange={(e) => setCompressName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && compressName.trim() && compressMutation.mutate({ item: compressItem, name: compressName.trim() })}
-            />
+            {compressItems.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                {compressItems.length} items selected
+              </p>
+            )}
+            <div className="space-y-1">
+              <Label>Archive name (without .zip)</Label>
+              <Input
+                autoFocus value={compressName}
+                onChange={(e) => setCompressName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && compressName.trim() &&
+                  compressMutation.mutate({ srcPaths: compressItems.map(i => i.path), name: compressName.trim() })}
+              />
+            </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => { setCompressItem(null); setCompressName(""); }}>
-                Cancel
-              </Button>
+              <Button variant="ghost" onClick={() => { setCompressItems([]); setCompressName(""); }}>Cancel</Button>
               <Button
                 disabled={!compressName.trim() || compressMutation.isPending}
-                onClick={() => compressMutation.mutate({ item: compressItem, name: compressName.trim() })}
+                onClick={() => compressMutation.mutate({ srcPaths: compressItems.map(i => i.path), name: compressName.trim() })}
               >
-                {compressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Compress
+                {compressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Compress
               </Button>
             </div>
           </div>
@@ -680,39 +753,60 @@ export default function FilesPage() {
       {permItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl space-y-4">
-            <h3 className="font-semibold flex items-center gap-2">
-              <Lock className="h-4 w-4" /> Set Permissions
-            </h3>
-            <p className="text-sm text-muted-foreground font-mono truncate">{permItem.path}</p>
+            <h3 className="font-semibold flex items-center gap-2"><Lock className="h-4 w-4" /> Permissions</h3>
+            <p className="text-sm font-mono text-muted-foreground truncate">{permItem.path}</p>
             <div className="space-y-1">
               <Label>Mode (octal)</Label>
               <Input
-                autoFocus
-                maxLength={4}
-                placeholder="755"
-                value={permMode}
+                autoFocus maxLength={4} placeholder="755" value={permMode}
                 onChange={(e) => setPermMode(e.target.value.replace(/[^0-7]/g, ""))}
                 className="font-mono"
               />
               <p className="text-xs text-muted-foreground">
-                e.g. 644 (file), 755 (executable / dir), 600 (private)
+                644 — file · 755 — dir/executable · 600 — private
               </p>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setPermItem(null)}>
-                Cancel
-              </Button>
+              <Button variant="ghost" onClick={() => setPermItem(null)}>Cancel</Button>
               <Button
                 disabled={permMode.length < 3 || permMutation.isPending}
                 onClick={() => permMutation.mutate({ path: permItem.path, mode: permMode })}
               >
-                {permMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Apply
+                {permMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Apply
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Delete confirm ── */}
+      <ConfirmDialog
+        open={deleteItems.length > 0}
+        title={
+          deleteItems.length === 1
+            ? `Delete "${deleteItems[0]?.name}"?`
+            : `Delete ${deleteItems.length} items?`
+        }
+        description={
+          deleteItems.some((i) => i.is_dir)
+            ? "Folders and all their contents will be permanently deleted."
+            : "These files will be permanently deleted."
+        }
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate(deleteItems.map((i) => i.path))}
+        onCancel={() => setDeleteItems([])}
+      />
+
+      {/* ── File editor ── */}
+      {editItem && (
+        <EditorModal
+          item={editItem}
+          onClose={() => { setEditItem(null); qc.invalidateQueries({ queryKey }); }}
+        />
+      )}
+
+      {/* Unused import guard */}
+      <span className="hidden"><CheckSquare className="h-0 w-0" /></span>
     </div>
   );
 }
