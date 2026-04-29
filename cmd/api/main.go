@@ -16,7 +16,6 @@ import (
 	"github.com/your-org/ventopanel/internal/infra/db"
 	ilock "github.com/your-org/ventopanel/internal/infra/lock"
 	ilogger "github.com/your-org/ventopanel/internal/infra/logger"
-	"github.com/your-org/ventopanel/internal/infra/notifier"
 	"github.com/your-org/ventopanel/internal/infra/security"
 	"github.com/your-org/ventopanel/internal/infra/ssh"
 	postgresrepo "github.com/your-org/ventopanel/internal/repository/postgres"
@@ -106,9 +105,6 @@ func main() {
 	lockManager := ilock.NewRedisLockManager(redisClient)
 	firewallManager := security.NewFirewallManager()
 	sslManager := security.NewSSLManager(sshExecutor, cfg.SSLCertbotEmail)
-	telegramNotifier := notifier.NewTelegram(cfg.TelegramBotToken, cfg.TelegramChatID)
-	whatsAppNotifier := notifier.NewWhatsApp(cfg.WhatsAppWebhookURL)
-
 	authService := authsvc.NewService(
 		userRepo,
 		cfg.AuthJWTSecret, cfg.AuthJWTIssuer, cfg.AuthJWTAudience,
@@ -121,7 +117,8 @@ func main() {
 	sslService := sslsvc.NewService(siteRepo, serverRepo, sslManager, asynqClient, lockManager, statusEventRepo).WithSSH(sshExecutor)
 	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo)
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
-	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier).WithSettingsRepo(settingsRepo)
+	// Alert service reads config dynamically from DB on every send — no static notifiers needed.
+	alertService := alertsvc.NewService().WithSettingsRepo(settingsRepo)
 	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService, settingsRepo)
 
 	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo)
@@ -211,8 +208,8 @@ func buildRouter(
 }
 
 func startUptimeScheduler(ctx context.Context, logger ilogger.Logger, svc *uptimesvc.Service) {
+	// Ping goroutine: every 60s.
 	go func() {
-		// Initial delay so the app fully starts before first check.
 		select {
 		case <-ctx.Done():
 			return
@@ -229,7 +226,27 @@ func startUptimeScheduler(ctx context.Context, logger ilogger.Logger, svc *uptim
 			}
 		}
 	}()
-	logger.Info().Msg("uptime monitor started (interval: 60s)")
+
+	// Prune goroutine: once per day per site — avoids per-check DB cost.
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Minute): // let first check cycle finish first
+		}
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			svc.PruneAll(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	logger.Info().Msg("uptime monitor started (check: 60s, prune: 24h)")
 }
 
 func startSSLRenewScheduler(ctx context.Context, logger ilogger.Logger, sslService *sslsvc.Service) {

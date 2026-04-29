@@ -93,12 +93,25 @@ func (r *SettingsRepository) SetNotificationConfig(ctx context.Context, cfg sett
 		{settings.KeyUptimeFailThreshold, strconv.Itoa(settings.ClampInt(cfg.UptimeFailThreshold, 1, 60))},
 		{settings.KeyUptimeRecoveryThreshold, strconv.Itoa(settings.ClampInt(cfg.UptimeRecoveryThreshold, 1, 60))},
 	}
+
+	// Use a transaction so all keys are written atomically.
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
 	for _, kv := range pairs {
-		if err := r.Set(ctx, kv[0], kv[1]); err != nil {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app_settings (key, value, updated_at)
+			VALUES ($1, $2, NOW())
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+			kv[0], kv[1],
+		); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func formatBool(b bool) string {

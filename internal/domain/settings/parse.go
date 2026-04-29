@@ -5,13 +5,9 @@ import (
 	"strings"
 )
 
-// ParseBool parses common truthy strings; empty uses def.
+// ParseBool parses common truthy strings; empty string uses def.
 func ParseBool(s string, def bool) bool {
-	s = strings.TrimSpace(strings.ToLower(s))
-	if s == "" {
-		return def
-	}
-	switch s {
+	switch strings.TrimSpace(strings.ToLower(s)) {
 	case "true", "1", "yes", "on":
 		return true
 	case "false", "0", "no", "off":
@@ -21,20 +17,21 @@ func ParseBool(s string, def bool) bool {
 	}
 }
 
-// ParseIntBounded parses decimal int; empty or invalid uses def, then clamps to [min,max].
+// ParseIntBounded parses a decimal integer and clamps it to [min, max].
+// On empty string or parse failure, def is used before clamping.
 func ParseIntBounded(s string, def, min, max int) int {
 	s = strings.TrimSpace(s)
-	if s == "" {
-		return clampInt(def, min, max)
+	n := def
+	if s != "" {
+		if v, err := strconv.Atoi(s); err == nil {
+			n = v
+		}
 	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return clampInt(def, min, max)
-	}
-	return clampInt(n, min, max)
+	return ClampInt(n, min, max)
 }
 
-func clampInt(n, min, max int) int {
+// ClampInt returns n constrained to [min, max].
+func ClampInt(n, min, max int) int {
 	if n < min {
 		return min
 	}
@@ -42,9 +39,4 @@ func clampInt(n, min, max int) int {
 		return max
 	}
 	return n
-}
-
-// ClampInt returns n constrained to [min, max].
-func ClampInt(n, min, max int) int {
-	return clampInt(n, min, max)
 }

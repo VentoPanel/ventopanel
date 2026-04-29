@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	settingsdomain "github.com/your-org/ventopanel/internal/domain/settings"
 	pgrepo "github.com/your-org/ventopanel/internal/repository/postgres"
 )
@@ -25,7 +23,7 @@ type settingsReader interface {
 type siteNotifyState struct {
 	failStreak int
 	okStreak   int
-	incident   bool // DOWN alert already sent; waiting for recovery threshold
+	incident   bool // DOWN alert sent; waiting for recovery threshold
 }
 
 type Service struct {
@@ -37,6 +35,9 @@ type Service struct {
 	mu          sync.Mutex
 	notifyState map[string]*siteNotifyState
 }
+
+// concurrency limit: at most N parallel HTTP checks.
+const maxConcurrent = 10
 
 func NewService(
 	siteRepo *pgrepo.SiteRepository,
@@ -62,62 +63,15 @@ func NewService(
 	}
 }
 
-// CheckAll pings every active site and records the result.
+// CheckAll pings every active site concurrently (bounded by maxConcurrent).
+// Config is fetched once per cycle so we don't hammer the DB N×.
 func (s *Service) CheckAll(ctx context.Context) {
 	sites, err := s.siteRepo.List(ctx)
 	if err != nil {
 		return
 	}
-	for _, site := range sites {
-		switch site.Status {
-		case "deployed", "ssl_pending", "ssl_active":
-		default:
-			continue
-		}
-		if strings.TrimSpace(site.Domain) == "" {
-			continue
-		}
-		s.checkSite(ctx, site.ID, site.Domain)
-	}
-}
 
-func (s *Service) checkSite(ctx context.Context, siteID, domain string) {
-	url := "https://" + domain
-	start := time.Now()
-	resp, err := s.client.Get(url)
-	if err != nil {
-		url = "http://" + domain
-		start = time.Now()
-		resp, err = s.client.Get(url)
-	}
-	latency := int(time.Since(start).Milliseconds())
-
-	check := pgrepo.UptimeCheck{SiteID: siteID}
-	if err != nil {
-		check.Status = "down"
-		check.Error = trimError(err.Error())
-	} else {
-		resp.Body.Close()
-		check.StatusCode = resp.StatusCode
-		check.LatencyMs = latency
-		if resp.StatusCode >= 500 {
-			check.Status = "down"
-			check.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
-		} else {
-			check.Status = "up"
-		}
-	}
-
-	_, prevErr := s.uptimeRepo.LastCheck(ctx, siteID)
-
-	_ = s.uptimeRepo.Insert(ctx, check)
-
-	_ = s.uptimeRepo.Prune(ctx, siteID, 10_080)
-
-	if prevErr != nil && prevErr != pgx.ErrNoRows {
-		return
-	}
-
+	// Fetch notification config once for the whole cycle.
 	cfg := settingsdomain.NotificationConfig{
 		UptimeNotifyDown:        true,
 		UptimeNotifyRecovery:    true,
@@ -130,10 +84,45 @@ func (s *Service) checkSite(ctx context.Context, siteID, domain string) {
 		}
 	}
 
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+
+	for _, site := range sites {
+		switch site.Status {
+		case "deployed", "ssl_pending", "ssl_active":
+		default:
+			continue
+		}
+		if strings.TrimSpace(site.Domain) == "" {
+			continue
+		}
+
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(id, domain string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.checkSite(ctx, id, domain, cfg)
+		}(site.ID, site.Domain)
+	}
+
+	wg.Wait()
+}
+
+func (s *Service) checkSite(ctx context.Context, siteID, domain string, cfg settingsdomain.NotificationConfig) {
+	// Build requests with context so they are cancelled on shutdown.
+	status, latency, statusCode, checkErr := s.ping(ctx, domain)
+
+	check := pgrepo.UptimeCheck{SiteID: siteID, Status: status, LatencyMs: latency, StatusCode: statusCode, Error: checkErr}
+
+	firstEver, _ := s.uptimeRepo.IsFirstCheck(ctx, siteID)
+
+	_ = s.uptimeRepo.Insert(ctx, check)
+
 	failTh := settingsdomain.ClampInt(cfg.UptimeFailThreshold, 1, 60)
 	recoverTh := settingsdomain.ClampInt(cfg.UptimeRecoveryThreshold, 1, 60)
 
-	down := check.Status == "down"
+	down := status == "down"
 
 	var notifyDownMsg, notifyRecoveryMsg string
 
@@ -151,20 +140,19 @@ func (s *Service) checkSite(ctx context.Context, siteID, domain string) {
 		st.failStreak = 0
 	}
 
-	firstEver := prevErr == pgx.ErrNoRows
-
 	if !firstEver {
 		if down && st.failStreak >= failTh && !st.incident && cfg.UptimeNotifyDown {
-			notifyDownMsg = fmt.Sprintf("🔴 Site DOWN: %s\nError: %s", domain, check.Error)
+			notifyDownMsg = fmt.Sprintf("🔴 Site DOWN: %s\nError: %s", domain, checkErr)
 			st.incident = true
 		}
 		if !down && st.incident && st.okStreak >= recoverTh && cfg.UptimeNotifyRecovery {
-			notifyRecoveryMsg = fmt.Sprintf("🟢 Site RECOVERED: %s\nLatency: %dms", domain, check.LatencyMs)
+			notifyRecoveryMsg = fmt.Sprintf("🟢 Site RECOVERED: %s\nLatency: %dms", domain, latency)
 			st.incident = false
 		}
 	}
 	s.mu.Unlock()
 
+	// Notifications are sent outside the mutex to avoid holding it during network I/O.
 	if notifyDownMsg != "" {
 		_ = s.notifier.NotifyAll(ctx, notifyDownMsg)
 	}
@@ -173,9 +161,46 @@ func (s *Service) checkSite(ctx context.Context, siteID, domain string) {
 	}
 }
 
-func trimError(e string) string {
-	if len(e) > 200 {
-		return e[:200]
+// PruneAll trims old uptime records for every known site. Run daily.
+func (s *Service) PruneAll(ctx context.Context) {
+	sites, err := s.siteRepo.List(ctx)
+	if err != nil {
+		return
 	}
-	return e
+	for _, site := range sites {
+		_ = s.uptimeRepo.Prune(ctx, site.ID, 10_080)
+	}
+}
+
+// ping tries HTTPS first, then HTTP fallback.
+// Returns: status ("up"/"down"), latency ms, HTTP status code, error string.
+func (s *Service) ping(ctx context.Context, domain string) (status string, latencyMs, statusCode int, errMsg string) {
+	for _, scheme := range []string{"https", "http"} {
+		url := scheme + "://" + domain
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			continue
+		}
+		start := time.Now()
+		resp, err := s.client.Do(req)
+		latencyMs = int(time.Since(start).Milliseconds())
+		if err != nil {
+			errMsg = trimStr(err.Error(), 200)
+			continue // try next scheme
+		}
+		resp.Body.Close()
+		statusCode = resp.StatusCode
+		if resp.StatusCode >= 500 {
+			return "down", latencyMs, statusCode, fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return "up", latencyMs, statusCode, ""
+	}
+	return "down", latencyMs, statusCode, errMsg
+}
+
+func trimStr(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }

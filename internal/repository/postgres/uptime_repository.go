@@ -47,22 +47,15 @@ func (r *UptimeRepository) Insert(ctx context.Context, c UptimeCheck) error {
 	return err
 }
 
-// LastCheck returns the most recent check for a site, or nil if none exist.
-func (r *UptimeRepository) LastCheck(ctx context.Context, siteID string) (*UptimeCheck, error) {
-	row := r.db.QueryRow(ctx, `
-		SELECT id, site_id, checked_at, status,
-		       COALESCE(latency_ms, 0), COALESCE(status_code, 0), COALESCE(error, '')
-		FROM site_uptime_checks
-		WHERE site_id = $1
-		ORDER BY checked_at DESC
-		LIMIT 1`, siteID)
-
-	var c UptimeCheck
-	if err := row.Scan(&c.ID, &c.SiteID, &c.CheckedAt, &c.Status,
-		&c.LatencyMs, &c.StatusCode, &c.Error); err != nil {
-		return nil, err
-	}
-	return &c, nil
+// IsFirstCheck returns true when no previous checks exist for the site.
+// Used to suppress notifications on the very first ping.
+func (r *UptimeRepository) IsFirstCheck(ctx context.Context, siteID string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM site_uptime_checks WHERE site_id = $1 LIMIT 1)`,
+		siteID,
+	).Scan(&exists)
+	return !exists, err
 }
 
 // ListRecent returns the last `limit` checks for a site, newest first.
@@ -119,19 +112,24 @@ func (r *UptimeRepository) UptimePct(ctx context.Context, siteID string, limit i
 	return *pct, nil
 }
 
-// Prune deletes checks older than `keep` for a site to bound table size.
+// Prune deletes records older than the most recent `keep` rows for a site.
+// Uses checked_at offset instead of NOT IN to avoid large subquery result sets.
 func (r *UptimeRepository) Prune(ctx context.Context, siteID string, keep int) error {
 	if keep <= 0 {
-		keep = 1440 // 24h worth of 1-min checks
+		keep = 10_080 // 7 days at 1 check/min
 	}
 	_, err := r.db.Exec(ctx, `
 		DELETE FROM site_uptime_checks
 		WHERE site_id = $1
-		AND id NOT IN (
-			SELECT id FROM site_uptime_checks
+		  AND checked_at < (
+			SELECT checked_at
+			FROM site_uptime_checks
 			WHERE site_id = $1
 			ORDER BY checked_at DESC
-			LIMIT $2
-		)`, siteID, keep)
+			OFFSET $2
+			LIMIT 1
+		  )`,
+		siteID, keep,
+	)
 	return err
 }
