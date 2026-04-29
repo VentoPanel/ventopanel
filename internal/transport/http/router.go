@@ -20,6 +20,7 @@ func RegisterRoutes(
 	uptimeHandler *UptimeHandler,
 	backupHandler *BackupHandler,
 	dashboardHandler *DashboardHandler,
+	templateHandler *TemplateHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -81,5 +82,7 @@ func RegisterRoutes(
 		api.GET("/dashboard/summary", dashboardHandler.GetSummary)
 		api.GET("/dashboard/uptime-trend", dashboardHandler.GetUptimeTrend)
 		api.GET("/dashboard/deploy-trend", dashboardHandler.GetDeployTrend)
+		api.GET("/templates", templateHandler.List)
+		api.GET("/templates/:id", templateHandler.GetByID)
 	}
 }

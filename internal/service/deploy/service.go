@@ -15,10 +15,19 @@ import (
 	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	domain "github.com/your-org/ventopanel/internal/domain/deploy"
 	"github.com/your-org/ventopanel/internal/domain/lifecycle"
+	tmplcatalog "github.com/your-org/ventopanel/internal/domain/template"
 	"github.com/your-org/ventopanel/internal/domain/tasklog"
 	"github.com/your-org/ventopanel/internal/infra/lock"
 	pgrepo "github.com/your-org/ventopanel/internal/repository/postgres"
 )
+
+// templateByID is a thin wrapper so tests can override via package-level var if needed.
+func templateByID(id string) *tmplcatalog.Template {
+	if id == "" {
+		return nil
+	}
+	return tmplcatalog.ByID(id)
+}
 
 const TaskDeploySite = "deploy:site"
 
@@ -184,7 +193,12 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		if branch == "" {
 			branch = "main"
 		}
-		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, branch, appPort, envFlags)
+		// If site has a chosen template, embed its Dockerfile in the script.
+		var tmplDockerfileB64 string
+		if t := templateByID(site.TemplateID); t != nil {
+			tmplDockerfileB64 = base64.StdEncoding.EncodeToString([]byte(t.Dockerfile))
+		}
+		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, branch, appPort, envFlags, tmplDockerfileB64)
 		scriptB64 := base64.StdEncoding.EncodeToString([]byte(script))
 		nginxContent := nginxProxyTemplate(site.Domain, appPort)
 		nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
@@ -509,14 +523,28 @@ func derivePort(siteID string) int {
 
 // repoDeployScript returns a POSIX shell script that:
 //  1. Clones or updates the git repo
-//  2. Auto-detects runtime and generates a Dockerfile when missing
+//  2. Writes a template Dockerfile (if provided) OR auto-detects the runtime
 //  3. Builds the image locally (no Docker Hub pull for the app image)
 //  4. Replaces the running container
+//
+// templateDockerfile is the raw Dockerfile content from the chosen template,
+// base64-encoded and written before `docker build`. Pass "" to fall back to
+// auto-detection.
 //
 // The script is designed to be piped to sh via base64:
 //
 //	echo BASE64 | base64 -d | sh 2>&1
-func repoDeployScript(siteID, repoURL, appDir, branch string, appPort int, envFlags string) string {
+func repoDeployScript(siteID, repoURL, appDir, branch string, appPort int, envFlags, templateDockerfileB64 string) string {
+	// If a template is provided, inject a block that writes it to Dockerfile
+	// (overriding any Dockerfile from the repo).
+	var injectBlock string
+	if templateDockerfileB64 != "" {
+		injectBlock = fmt.Sprintf(`
+echo "==> Using VentoPanel template Dockerfile..."
+echo '%s' | base64 -d > Dockerfile
+`, templateDockerfileB64)
+	}
+
 	return fmt.Sprintf(`#!/bin/sh
 set -e
 
@@ -546,10 +574,10 @@ else
 fi
 
 cd "$APP_DIR"
-
-# Auto-detect runtime and generate Dockerfile when none exists.
+%s
+# Auto-detect runtime and generate Dockerfile when none exists (template already written above if set).
 if [ -f Dockerfile ]; then
-  echo "==> Using existing Dockerfile"
+  echo "==> Using Dockerfile"
 elif [ -f package.json ]; then
   echo "==> Detected Node.js — generating Dockerfile"
   printf 'FROM node:20-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install --production 2>&1 || npm install 2>&1\nCOPY . .\nEXPOSE 3000\nCMD ["npm","start"]\n' > Dockerfile
@@ -582,7 +610,7 @@ docker run -d \
   "ventopanel_${SITE_ID}"
 
 echo "==> Done."
-`, appDir, siteID, repoURL, branch, appPort, envFlags)
+`, appDir, siteID, repoURL, branch, appPort, injectBlock, envFlags)
 }
 
 // nginxProxyTemplate proxies requests to a Docker container on appPort.

@@ -127,6 +127,7 @@ func (h *SiteHandler) Create(c *gin.Context) {
 		Status:          req.Status,
 		WebhookToken:    webhookToken,
 		HealthcheckPath: hcPath,
+		TemplateID:      strings.TrimSpace(req.TemplateID),
 	})
 	if err != nil {
 		switch {
@@ -231,6 +232,7 @@ func (h *SiteHandler) Update(c *gin.Context) {
 		Branch:          updBranch,
 		Status:          req.Status,
 		HealthcheckPath: updHcPath,
+		TemplateID:      strings.TrimSpace(req.TemplateID),
 	})
 	if err != nil {
 		switch {

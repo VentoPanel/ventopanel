@@ -23,6 +23,7 @@ type Site struct {
 	Status           string
 	WebhookToken     string
 	HealthcheckPath  string // URL path for uptime checks, e.g. "/health". Defaults to "/".
+	TemplateID       string // slug from the template catalog, e.g. "nextjs". Empty = auto-detect.
 }
 
 type Repository interface {

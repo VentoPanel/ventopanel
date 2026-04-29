@@ -27,8 +27,8 @@ func (r *SiteRepository) Create(ctx context.Context, site *domain.Site) error {
 		hcPath = "/"
 	}
 	const query = `
-		INSERT INTO sites (server_id, name, domain, runtime, repository_url, branch, status, webhook_token, healthcheck_path)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO sites (server_id, name, domain, runtime, repository_url, branch, status, webhook_token, healthcheck_path, template_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id
 	`
 	return r.db.QueryRow(ctx, query,
@@ -41,6 +41,7 @@ func (r *SiteRepository) Create(ctx context.Context, site *domain.Site) error {
 		site.Status,
 		nullableStr(site.WebhookToken),
 		hcPath,
+		site.TemplateID,
 	).Scan(&site.ID)
 }
 
@@ -48,7 +49,7 @@ func (r *SiteRepository) GetByID(ctx context.Context, id string) (*domain.Site, 
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
 		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
-		       COALESCE(healthcheck_path, '/')
+		       COALESCE(healthcheck_path, '/'), COALESCE(template_id, '')
 		FROM sites
 		WHERE id = $1
 	`
@@ -56,7 +57,7 @@ func (r *SiteRepository) GetByID(ctx context.Context, id string) (*domain.Site, 
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&site.ID, &site.ServerID, &site.Name, &site.Domain,
 		&site.Runtime, &site.RepositoryURL, &site.Branch, &site.Status,
-		&site.WebhookToken, &site.HealthcheckPath,
+		&site.WebhookToken, &site.HealthcheckPath, &site.TemplateID,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -71,7 +72,7 @@ func (r *SiteRepository) FindByWebhookToken(ctx context.Context, token string) (
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
 		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
-		       COALESCE(healthcheck_path, '/')
+		       COALESCE(healthcheck_path, '/'), COALESCE(template_id, '')
 		FROM sites
 		WHERE webhook_token = $1
 	`
@@ -79,7 +80,7 @@ func (r *SiteRepository) FindByWebhookToken(ctx context.Context, token string) (
 	err := r.db.QueryRow(ctx, query, token).Scan(
 		&site.ID, &site.ServerID, &site.Name, &site.Domain,
 		&site.Runtime, &site.RepositoryURL, &site.Branch, &site.Status,
-		&site.WebhookToken, &site.HealthcheckPath,
+		&site.WebhookToken, &site.HealthcheckPath, &site.TemplateID,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -110,7 +111,7 @@ func (r *SiteRepository) List(ctx context.Context) ([]domain.Site, error) {
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
 		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
-		       COALESCE(healthcheck_path, '/')
+		       COALESCE(healthcheck_path, '/'), COALESCE(template_id, '')
 		FROM sites
 		ORDER BY created_at DESC
 	`
@@ -130,7 +131,7 @@ func (r *SiteRepository) Update(ctx context.Context, site *domain.Site) error {
 		UPDATE sites
 		SET server_id = $2, name = $3, domain = $4, runtime = $5,
 		    repository_url = $6, branch = $7, status = $8,
-		    healthcheck_path = $9, updated_at = NOW()
+		    healthcheck_path = $9, template_id = $10, updated_at = NOW()
 		WHERE id = $1
 	`
 	tag, err := r.db.Exec(ctx, query,
@@ -143,6 +144,7 @@ func (r *SiteRepository) Update(ctx context.Context, site *domain.Site) error {
 		branch,
 		site.Status,
 		hcPath,
+		site.TemplateID,
 	)
 	if err != nil {
 		return err
@@ -159,7 +161,7 @@ func (r *SiteRepository) ListByServerID(ctx context.Context, serverID string) ([
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
 		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
-		       COALESCE(healthcheck_path, '/')
+		       COALESCE(healthcheck_path, '/'), COALESCE(template_id, '')
 		FROM sites
 		WHERE server_id = $1
 		ORDER BY created_at DESC
@@ -180,7 +182,7 @@ func (r *SiteRepository) querySites(ctx context.Context, query string, args ...i
 		if err := rows.Scan(
 			&s.ID, &s.ServerID, &s.Name, &s.Domain,
 			&s.Runtime, &s.RepositoryURL, &s.Branch, &s.Status,
-			&s.WebhookToken, &s.HealthcheckPath,
+			&s.WebhookToken, &s.HealthcheckPath, &s.TemplateID,
 		); err != nil {
 			return nil, err
 		}

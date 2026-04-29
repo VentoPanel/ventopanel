@@ -71,8 +71,19 @@ export interface Site {
   Status: string;
   WebhookToken: string;
   HealthcheckPath: string;
+  TemplateID: string;
   CreatedAt: string;
   UpdatedAt: string;
+}
+
+export interface SiteTemplate {
+  id: string;
+  name: string;
+  description: string;
+  runtime: string;
+  tags: string[];
+  dockerfile: string;
+  healthcheck_path: string;
 }
 
 interface ListResponse<T> {
@@ -107,6 +118,7 @@ export type SiteInput = {
   repository_url: string;
   branch: string;
   healthcheck_path?: string;
+  template_id?: string;
   status?: string;
 };
 
@@ -621,4 +633,15 @@ export function getLogStreamUrl(siteID: string): string {
   const token = getToken();
   const params = token ? `?token=${encodeURIComponent(token)}` : "";
   return `/api/v1/sites/${siteID}/container/logs/stream${params}`;
+}
+
+// ── Site Templates ────────────────────────────────────────────────────────────
+
+export async function fetchTemplates(): Promise<SiteTemplate[]> {
+  const data = await apiFetch<{ items: SiteTemplate[] }>("/templates");
+  return data.items ?? [];
+}
+
+export async function fetchTemplateByID(id: string): Promise<SiteTemplate> {
+  return apiFetch<SiteTemplate>(`/templates/${id}`);
 }

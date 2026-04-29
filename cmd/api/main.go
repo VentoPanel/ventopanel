@@ -209,8 +209,9 @@ func buildRouter(
 	uptimeHandler := httptransport.NewUptimeHandler(uptimeRepo, teamService)
 	backupHandler := httptransport.NewBackupHandler(backupService)
 	dashboardHandler := httptransport.NewDashboardHandler(dashboardRepo)
+	templateHandler := httptransport.NewTemplateHandler()
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler)
 
 	return engine
 }

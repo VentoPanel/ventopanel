@@ -29,6 +29,7 @@ type createSiteRequest struct {
 	Branch          string `json:"branch"`
 	Status          string `json:"status"`
 	HealthcheckPath string `json:"healthcheck_path"`
+	TemplateID      string `json:"template_id"`
 }
 
 type updateSiteRequest struct {
@@ -40,6 +41,7 @@ type updateSiteRequest struct {
 	Branch          string `json:"branch"`
 	Status          string `json:"status"`
 	HealthcheckPath string `json:"healthcheck_path"`
+	TemplateID      string `json:"template_id"`
 }
 
 type listResponse[T any] struct {
