@@ -56,6 +56,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SiteForm } from "@/components/site-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RefreshIndicator } from "@/components/refresh-indicator";
@@ -135,12 +136,12 @@ export default function SiteDetailPage({
 
   const { isAdmin, canWrite } = useAuth();
 
-  const { data: sslInfo, isError: sslError } = useQuery({
+  const { data: sslInfo, isError: sslError, isLoading: sslLoading } = useQuery({
     queryKey: ["site-ssl", id],
     queryFn: () => fetchSiteSSL(id),
     refetchInterval: 120_000,
     refetchIntervalInBackground: false,
-    staleTime: 60_000,   // keep last value visible while re-fetching
+    staleTime: 60_000,
     retry: 2,
     retryDelay: 3000,
   });
@@ -442,11 +443,11 @@ export default function SiteDetailPage({
         </div>
       )}
 
-      {/* SSL Status — always show the card; grey-out while loading / on error */}
-      {(sslInfo || sslError) && (
+      {/* SSL Status — always show the card; skeleton on first load */}
+      {(sslLoading || sslInfo || sslError) && (
         <Card className={cn(
           "border-l-4",
-          sslError && "border-l-gray-200",
+          (sslLoading || sslError) && "border-l-gray-200",
           sslInfo?.status === "valid" && "border-l-green-500",
           sslInfo?.status === "expiring_soon" && "border-l-yellow-500",
           sslInfo?.status === "expired" && "border-l-red-500",
@@ -456,8 +457,8 @@ export default function SiteDetailPage({
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
               {sslInfo?.status === "valid" && <ShieldCheck className="h-4 w-4 text-green-600" />}
               {sslInfo?.status === "expiring_soon" && <ShieldAlert className="h-4 w-4 text-yellow-600" />}
-              {(sslInfo?.status === "expired" || sslInfo?.status === "no_cert") && <ShieldX className="h-4 w-4 text-muted-foreground" />}
-              {(sslError || !sslInfo) && <ShieldX className="h-4 w-4 text-muted-foreground" />}
+              {(sslInfo?.status === "expired" || sslInfo?.status === "no_cert" || sslError || sslLoading) &&
+                <ShieldX className="h-4 w-4 text-muted-foreground" />}
               SSL Certificate
             </CardTitle>
             {canWrite && sslInfo && sslInfo.status !== "no_cert" && (
@@ -473,7 +474,24 @@ export default function SiteDetailPage({
             )}
           </CardHeader>
           <CardContent className="flex items-center gap-6 text-sm">
-            {sslError && (
+            {/* skeleton on first load */}
+            {sslLoading && !sslInfo && (
+              <div className="flex items-center gap-6">
+                <div className="space-y-1">
+                  <Skeleton className="h-3 w-12" />
+                  <Skeleton className="h-5 w-16" />
+                </div>
+                <div className="space-y-1">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-5 w-24" />
+                </div>
+                <div className="space-y-1">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-5 w-8" />
+                </div>
+              </div>
+            )}
+            {sslError && !sslInfo && (
               <p className="text-sm text-muted-foreground">
                 Could not reach server to check certificate. Will retry automatically.
               </p>

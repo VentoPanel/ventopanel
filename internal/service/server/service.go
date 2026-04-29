@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	"github.com/your-org/ventopanel/internal/domain/lifecycle"
@@ -147,23 +148,28 @@ func (s *Service) GetStats(ctx context.Context, id string) (*domain.ServerStats,
 		return nil, err
 	}
 
-	// Single compound command — one SSH session, five output lines:
-	//  line 0: nproc (CPU core count)
-	//  line 1: load avg 1-min (from /proc/loadavg)
-	//  line 2: RAM total MB
-	//  line 3: RAM used MB
-	//  line 4-7: disk total / used / free / pct  (space-separated)
-	//  last line: uptime -p
+	// Bound the SSH round-trip so a slow server never hangs the UI.
+	sshCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Single compound command — one SSH session, five output sections
+	// separated by "---" markers:
+	//  0: nproc (CPU core count)
+	//  1: load avg 1-min (from /proc/loadavg)
+	//  2: RAM total MB
+	//  3: RAM used MB
+	//  4: disk total / used / free / pct  (space-separated)
+	//  5: uptime string
 	script := strings.Join([]string{
 		`nproc`,
 		`awk '{print $1}' /proc/loadavg`,
 		`free -m | awk '/^Mem:/{print $2}'`,
 		`free -m | awk '/^Mem:/{print $3}'`,
 		`df -h / | tail -1 | awk '{print $2,$3,$4,$5}'`,
-		`uptime -p`,
+		`uptime -p 2>/dev/null || uptime | awk -F'up ' '{print $2}' | awk -F',' '{print $1}'`,
 	}, " && echo '---' && ")
 
-	out, err := s.sshExecutor.RunOutput(ctx, *server, script)
+	out, err := s.sshExecutor.RunOutput(sshCtx, *server, script)
 	if err != nil {
 		return nil, fmt.Errorf("fetch server stats: %w", err)
 	}

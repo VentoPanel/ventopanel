@@ -362,12 +362,14 @@ func (s *Service) GetContainerInfo(ctx context.Context, siteID string) (*Contain
 	}
 
 	// 2. docker stats — only meaningful when the container is running.
-	// docker stats --no-stream always returns 0% on the first call because it
-	// needs two data points to compute a CPU delta. We call it twice; the
-	// daemon caches the first reading, so the second call gives a real value.
+	// `docker stats --no-stream` computes CPU% as a delta between two kernel
+	// readings. The daemon needs at least two measurement points separated in
+	// time. We take two back-to-back readings with a 1-second gap; the first
+	// primes the daemon cache, the second returns the actual current value.
 	if info.Status == "running" {
 		statsCmd := fmt.Sprintf(
 			`docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}' %s 2>/dev/null; `+
+				`sleep 1; `+
 				`docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}' %s 2>/dev/null || echo '|'`,
 			name, name,
 		)

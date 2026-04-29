@@ -29,6 +29,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshIndicator } from "@/components/refresh-indicator";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -247,15 +248,28 @@ export default function ServerDetailPage({
       <div>
         <h3 className="mb-3 text-lg font-semibold">Live Monitoring</h3>
 
-        {statsLoading && (
-          <p className="text-sm text-muted-foreground">
-            Fetching server stats…
-          </p>
-        )}
         {statsError && (
-          <p className="text-sm text-destructive">
+          <p className="mb-3 text-sm text-destructive">
             Could not fetch stats — server may be offline or not yet connected.
           </p>
+        )}
+
+        {/* Skeleton shown only on first load (no cached data yet) */}
+        {statsLoading && !stats && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-4 rounded" />
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <Skeleton className="h-8 w-24" />
+                  <Skeleton className="h-2 w-full rounded-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
 
         {stats && (
