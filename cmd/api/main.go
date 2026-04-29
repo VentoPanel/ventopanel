@@ -20,6 +20,7 @@ import (
 	"github.com/your-org/ventopanel/internal/infra/ssh"
 	postgresrepo "github.com/your-org/ventopanel/internal/repository/postgres"
 	alertsvc "github.com/your-org/ventopanel/internal/service/alert"
+	backupsvc "github.com/your-org/ventopanel/internal/service/backup"
 	uptimesvc "github.com/your-org/ventopanel/internal/service/uptime"
 	authsvc "github.com/your-org/ventopanel/internal/service/auth"
 	auditsvc "github.com/your-org/ventopanel/internal/service/audit"
@@ -120,8 +121,9 @@ func main() {
 	// Alert service reads config dynamically from DB on every send — no static notifiers needed.
 	alertService := alertsvc.NewService().WithSettingsRepo(settingsRepo)
 	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService, settingsRepo)
+	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -135,6 +137,7 @@ func main() {
 	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
 	startSSLRenewScheduler(schedulerCtx, logger, sslService)
 	startUptimeScheduler(schedulerCtx, logger, uptimeService)
+	startBackupScheduler(schedulerCtx, logger, backupService, alertService)
 
 	go func() {
 		logger.Info().Str("addr", httpServer.Addr).Str("env", cfg.AppEnv).Msg("starting http server")
@@ -171,6 +174,7 @@ func buildRouter(
 	envRepo *postgresrepo.EnvRepository,
 	siteRepo *postgresrepo.SiteRepository,
 	uptimeRepo *postgresrepo.UptimeRepository,
+	backupService *backupsvc.Service,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -201,10 +205,48 @@ func buildRouter(
 	envHandler := httptransport.NewEnvHandler(envRepo, teamService)
 	webhookHandler := httptransport.NewWebhookHandler(siteRepo, deployService)
 	uptimeHandler := httptransport.NewUptimeHandler(uptimeRepo, teamService)
+	backupHandler := httptransport.NewBackupHandler(backupService)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler)
 
 	return engine
+}
+
+type alertNotifier interface {
+	NotifyAll(ctx context.Context, message string) error
+}
+
+func startBackupScheduler(ctx context.Context, logger ilogger.Logger, svc *backupsvc.Service, notifier alertNotifier) {
+	go func() {
+		// First backup 5 min after startup to verify the setup.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Minute):
+		}
+		runBackup(ctx, logger, svc, notifier)
+
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				runBackup(ctx, logger, svc, notifier)
+			}
+		}
+	}()
+	logger.Info().Msg("backup scheduler started (interval: 24h)")
+}
+
+func runBackup(ctx context.Context, logger ilogger.Logger, svc *backupsvc.Service, notifier alertNotifier) {
+	if err := svc.Run(ctx); err != nil {
+		logger.Error().Err(err).Msg("scheduled backup failed")
+		_ = notifier.NotifyAll(ctx, "⚠️ VentoPanel backup FAILED\n"+err.Error())
+	} else {
+		logger.Info().Msg("scheduled backup completed")
+	}
 }
 
 func startUptimeScheduler(ctx context.Context, logger ilogger.Logger, svc *uptimesvc.Service) {

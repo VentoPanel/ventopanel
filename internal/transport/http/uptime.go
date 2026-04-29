@@ -36,6 +36,40 @@ type uptimeResponse struct {
 	Checks    []uptimeCheckJSON `json:"checks"`
 }
 
+type uptimeSiteOverviewJSON struct {
+	SiteID        string  `json:"site_id"`
+	SiteName      string  `json:"site_name"`
+	Domain        string  `json:"domain"`
+	LastStatus    string  `json:"last_status"`
+	LastCheckedAt string  `json:"last_checked_at"`
+	LatencyMs     int     `json:"latency_ms"`
+	UptimePct90   float64 `json:"uptime_pct_90"`
+}
+
+// GetOverview handles GET /uptime/overview — all sites with latest status and uptime %.
+func (h *UptimeHandler) GetOverview(c *gin.Context) {
+	overviews, err := h.uptimeRepo.OverviewAll(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+
+	out := make([]uptimeSiteOverviewJSON, 0, len(overviews))
+	for _, o := range overviews {
+		out = append(out, uptimeSiteOverviewJSON{
+			SiteID:        o.SiteID,
+			SiteName:      o.SiteName,
+			Domain:        o.Domain,
+			LastStatus:    o.LastStatus,
+			LastCheckedAt: o.LastCheckedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			LatencyMs:     o.LatencyMs,
+			UptimePct90:   o.UptimePct90,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": out})
+}
+
 // GetUptime handles GET /sites/:id/uptime?limit=90
 func (h *UptimeHandler) GetUptime(c *gin.Context) {
 	siteID := c.Param("id")

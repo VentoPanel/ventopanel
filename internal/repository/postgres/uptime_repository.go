@@ -112,6 +112,73 @@ func (r *UptimeRepository) UptimePct(ctx context.Context, siteID string, limit i
 	return *pct, nil
 }
 
+// SiteOverview holds the aggregated uptime info for one site.
+type SiteOverview struct {
+	SiteID        string
+	SiteName      string
+	Domain        string
+	LastStatus    string    // "up" | "down" | "" (never checked)
+	LastCheckedAt time.Time
+	LatencyMs     int
+	UptimePct90   float64 // last 90 checks
+}
+
+// OverviewAll returns the latest check + uptime % for every site that has at least one check.
+func (r *UptimeRepository) OverviewAll(ctx context.Context) ([]SiteOverview, error) {
+	rows, err := r.db.Query(ctx, `
+		WITH latest AS (
+			SELECT DISTINCT ON (site_id)
+				site_id,
+				status,
+				checked_at,
+				COALESCE(latency_ms, 0) AS latency_ms
+			FROM site_uptime_checks
+			ORDER BY site_id, checked_at DESC
+		),
+		pct AS (
+			SELECT
+				site_id,
+				COUNT(*) FILTER (WHERE status = 'up')::float / NULLIF(COUNT(*), 0) * 100 AS uptime_pct
+			FROM (
+				SELECT site_id, status,
+					ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY checked_at DESC) AS rn
+				FROM site_uptime_checks
+			) ranked
+			WHERE rn <= 90
+			GROUP BY site_id
+		)
+		SELECT
+			s.id,
+			s.name,
+			s.domain,
+			COALESCE(l.status, '')      AS last_status,
+			COALESCE(l.checked_at, '1970-01-01'::timestamptz) AS last_checked_at,
+			COALESCE(l.latency_ms, 0)   AS latency_ms,
+			COALESCE(p.uptime_pct, 0)   AS uptime_pct
+		FROM sites s
+		LEFT JOIN latest l ON l.site_id = s.id
+		LEFT JOIN pct    p ON p.site_id = s.id
+		ORDER BY s.name`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []SiteOverview
+	for rows.Next() {
+		var o SiteOverview
+		if err := rows.Scan(
+			&o.SiteID, &o.SiteName, &o.Domain,
+			&o.LastStatus, &o.LastCheckedAt, &o.LatencyMs, &o.UptimePct90,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // Prune deletes records older than the most recent `keep` rows for a site.
 // Uses checked_at offset instead of NOT IN to avoid large subquery result sets.
 func (r *UptimeRepository) Prune(ctx context.Context, siteID string, keep int) error {

@@ -24,6 +24,8 @@ type Config struct {
 	AuthAllowHeaders   bool          `env:"AUTH_ALLOW_HEADER_FALLBACK" env-default:"false"`
 	AuthJWTIssuer      string        `env:"AUTH_JWT_ISSUER" env-default:""`
 	AuthJWTAudience    string        `env:"AUTH_JWT_AUDIENCE" env-default:""`
+	BackupDir          string        `env:"BACKUP_DIR" env-default:"/data/backups"`
+	BackupKeepCount    int           `env:"BACKUP_KEEP_COUNT" env-default:"7"`
 }
 
 func Load() (*Config, error) {

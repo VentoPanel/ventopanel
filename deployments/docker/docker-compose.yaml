@@ -52,6 +52,10 @@ services:
       AUTH_ALLOW_HEADER_FALLBACK: ${AUTH_ALLOW_HEADER_FALLBACK:-true}
       AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-}
       AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-}
+      BACKUP_DIR: ${BACKUP_DIR:-/data/backups}
+      BACKUP_KEEP_COUNT: ${BACKUP_KEEP_COUNT:-7}
+    volumes:
+      - backup_data:/data/backups
     ports:
       - "8080:8080"
 
@@ -70,3 +74,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  backup_data:

@@ -476,3 +476,37 @@ export interface UptimeData {
 export async function fetchUptime(siteID: string, limit = 90): Promise<UptimeData> {
   return apiFetch<UptimeData>(`/sites/${siteID}/uptime?limit=${limit}`);
 }
+
+export interface UptimeSiteOverview {
+  site_id: string;
+  site_name: string;
+  domain: string;
+  last_status: string; // "up" | "down" | ""
+  last_checked_at: string;
+  latency_ms: number;
+  uptime_pct_90: number;
+}
+
+export async function fetchUptimeOverview(): Promise<UptimeSiteOverview[]> {
+  const data = await apiFetch<{ items: UptimeSiteOverview[] }>("/uptime/overview");
+  return data.items ?? [];
+}
+
+export interface BackupMeta {
+  name: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+export async function fetchBackups(): Promise<BackupMeta[]> {
+  const data = await apiFetch<{ items: BackupMeta[] }>("/backups");
+  return data.items ?? [];
+}
+
+export async function triggerBackup(): Promise<void> {
+  await apiFetch("/backups/trigger", { method: "POST" });
+}
+
+export function backupDownloadUrl(name: string): string {
+  return `/api/v1/backups/${encodeURIComponent(name)}/download`;
+}
