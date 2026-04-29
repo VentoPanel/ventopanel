@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -37,17 +38,26 @@ func (r *SettingsRepository) Set(ctx context.Context, key, value string) error {
 func (r *SettingsRepository) GetNotificationConfig(ctx context.Context) (settings.NotificationConfig, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT key, value FROM app_settings
-		 WHERE key IN ($1, $2, $3)`,
+		 WHERE key IN ($1, $2, $3, $4, $5, $6, $7)`,
 		settings.KeyTelegramBotToken,
 		settings.KeyTelegramChatID,
 		settings.KeyWhatsAppWebhookURL,
+		settings.KeyUptimeNotifyDown,
+		settings.KeyUptimeNotifyRecovery,
+		settings.KeyUptimeFailThreshold,
+		settings.KeyUptimeRecoveryThreshold,
 	)
 	if err != nil {
 		return settings.NotificationConfig{}, err
 	}
 	defer rows.Close()
 
-	var cfg settings.NotificationConfig
+	cfg := settings.NotificationConfig{
+		UptimeNotifyDown:        true,
+		UptimeNotifyRecovery:    true,
+		UptimeFailThreshold:     1,
+		UptimeRecoveryThreshold: 1,
+	}
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err != nil {
@@ -60,6 +70,14 @@ func (r *SettingsRepository) GetNotificationConfig(ctx context.Context) (setting
 			cfg.TelegramChatID = v
 		case settings.KeyWhatsAppWebhookURL:
 			cfg.WhatsAppWebhookURL = v
+		case settings.KeyUptimeNotifyDown:
+			cfg.UptimeNotifyDown = settings.ParseBool(v, true)
+		case settings.KeyUptimeNotifyRecovery:
+			cfg.UptimeNotifyRecovery = settings.ParseBool(v, true)
+		case settings.KeyUptimeFailThreshold:
+			cfg.UptimeFailThreshold = settings.ParseIntBounded(v, 1, 1, 60)
+		case settings.KeyUptimeRecoveryThreshold:
+			cfg.UptimeRecoveryThreshold = settings.ParseIntBounded(v, 1, 1, 60)
 		}
 	}
 	return cfg, rows.Err()
@@ -70,6 +88,10 @@ func (r *SettingsRepository) SetNotificationConfig(ctx context.Context, cfg sett
 		{settings.KeyTelegramBotToken, cfg.TelegramBotToken},
 		{settings.KeyTelegramChatID, cfg.TelegramChatID},
 		{settings.KeyWhatsAppWebhookURL, cfg.WhatsAppWebhookURL},
+		{settings.KeyUptimeNotifyDown, formatBool(cfg.UptimeNotifyDown)},
+		{settings.KeyUptimeNotifyRecovery, formatBool(cfg.UptimeNotifyRecovery)},
+		{settings.KeyUptimeFailThreshold, strconv.Itoa(settings.ClampInt(cfg.UptimeFailThreshold, 1, 60))},
+		{settings.KeyUptimeRecoveryThreshold, strconv.Itoa(settings.ClampInt(cfg.UptimeRecoveryThreshold, 1, 60))},
 	}
 	for _, kv := range pairs {
 		if err := r.Set(ctx, kv[0], kv[1]); err != nil {
@@ -77,4 +99,11 @@ func (r *SettingsRepository) SetNotificationConfig(ctx context.Context, cfg sett
 		}
 	}
 	return nil
+}
+
+func formatBool(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }

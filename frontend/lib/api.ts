@@ -326,6 +326,10 @@ export interface NotificationSettings {
   telegram_bot_token: string;
   telegram_chat_id: string;
   whatsapp_webhook_url: string;
+  uptime_notify_down: boolean;
+  uptime_notify_recovery: boolean;
+  uptime_fail_threshold: number;
+  uptime_recovery_threshold: number;
 }
 
 export async function fetchNotificationSettings(): Promise<NotificationSettings> {

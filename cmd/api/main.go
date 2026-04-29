@@ -90,9 +90,13 @@ func main() {
 		existing, _ := settingsRepo.GetNotificationConfig(ctx)
 		if existing.TelegramBotToken == "" && existing.TelegramChatID == "" && existing.WhatsAppWebhookURL == "" {
 			_ = settingsRepo.SetNotificationConfig(ctx, settingsdomain.NotificationConfig{
-				TelegramBotToken:   cfg.TelegramBotToken,
-				TelegramChatID:     cfg.TelegramChatID,
-				WhatsAppWebhookURL: cfg.WhatsAppWebhookURL,
+				TelegramBotToken:        cfg.TelegramBotToken,
+				TelegramChatID:          cfg.TelegramChatID,
+				WhatsAppWebhookURL:      cfg.WhatsAppWebhookURL,
+				UptimeNotifyDown:        true,
+				UptimeNotifyRecovery:    true,
+				UptimeFailThreshold:     1,
+				UptimeRecoveryThreshold: 1,
 			})
 			logger.Info().Msg("seeded notification settings from environment variables")
 		}
@@ -118,7 +122,7 @@ func main() {
 	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo)
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier).WithSettingsRepo(settingsRepo)
-	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService)
+	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService, settingsRepo)
 
 	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo)
 	httpServer := &http.Server{

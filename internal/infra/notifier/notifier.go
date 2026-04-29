@@ -6,11 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
-// Noop is a no-op notifier used when credentials are not configured.
-type Noop struct{}
+// SplitRecipients splits by commas or line breaks; trims; drops empty entries.
+func SplitRecipients(s string) []string {
+	s = strings.ReplaceAll(strings.TrimSpace(s), "\r\n", "\n")
+	s = strings.ReplaceAll(s, ",", "\n")
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
 
 func NewNoop() *Noop { return &Noop{} }
 

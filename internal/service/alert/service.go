@@ -42,11 +42,17 @@ func (s *Service) NotifyAll(ctx context.Context, message string) error {
 	if s.settingsRepo != nil {
 		cfg, err := s.settingsRepo.GetNotificationConfig(ctx)
 		if err == nil {
-			if cfg.TelegramBotToken != "" && cfg.TelegramChatID != "" {
-				notifiers = append(notifiers, notifier.NewTelegram(cfg.TelegramBotToken, cfg.TelegramChatID))
+			if cfg.TelegramBotToken != "" {
+				for _, chatID := range notifier.SplitRecipients(cfg.TelegramChatID) {
+					if chatID != "" {
+						notifiers = append(notifiers, notifier.NewTelegram(cfg.TelegramBotToken, chatID))
+					}
+				}
 			}
-			if cfg.WhatsAppWebhookURL != "" {
-				notifiers = append(notifiers, notifier.NewWhatsApp(cfg.WhatsAppWebhookURL))
+			for _, webhookURL := range notifier.SplitRecipients(cfg.WhatsAppWebhookURL) {
+				if webhookURL != "" {
+					notifiers = append(notifiers, notifier.NewWhatsApp(webhookURL))
+				}
 			}
 		}
 	} else {

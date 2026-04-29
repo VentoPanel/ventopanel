@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, Send, MessageSquare, Save, Eye, EyeOff } from "lucide-react";
+import { Settings, Send, MessageSquare, Save, Eye, EyeOff, Activity } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchNotificationSettings,
@@ -59,10 +59,27 @@ export default function SettingsPage() {
     telegram_bot_token: "",
     telegram_chat_id: "",
     whatsapp_webhook_url: "",
+    uptime_notify_down: true,
+    uptime_notify_recovery: true,
+    uptime_fail_threshold: 1,
+    uptime_recovery_threshold: 1,
   });
 
   useEffect(() => {
-    if (data) setForm(data);
+    if (!data) return;
+    setForm({
+      telegram_bot_token: data.telegram_bot_token ?? "",
+      telegram_chat_id: data.telegram_chat_id ?? "",
+      whatsapp_webhook_url: data.whatsapp_webhook_url ?? "",
+      uptime_notify_down: data.uptime_notify_down ?? true,
+      uptime_notify_recovery: data.uptime_notify_recovery ?? true,
+      uptime_fail_threshold:
+        typeof data.uptime_fail_threshold === "number" ? data.uptime_fail_threshold : 1,
+      uptime_recovery_threshold:
+        typeof data.uptime_recovery_threshold === "number"
+          ? data.uptime_recovery_threshold
+          : 1,
+    });
   }, [data]);
 
   const { mutate: save, isPending: saving } = useMutation({
@@ -132,7 +149,7 @@ export default function SettingsPage() {
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Your personal chat ID or a group/channel ID (starts with -100).
+                Personal chat, group, or channel. Multiple IDs: comma or one per line.
               </p>
             </div>
           </CardContent>
@@ -161,6 +178,102 @@ export default function SettingsPage() {
               placeholder="https://api.example.com/webhook/send"
               className="font-mono text-sm"
             />
+            <p className="text-xs text-muted-foreground mt-2">
+              Multiple URLs: comma-separated or one per line (same message to each).
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Uptime alerts */}
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="h-4 w-4" />
+              Uptime alerts
+            </CardTitle>
+            <CardDescription>
+              Applies to HTTP checks every minute. Thresholds reduce noise when the network flaps.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-input"
+                checked={form.uptime_notify_down}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, uptime_notify_down: e.target.checked }))
+                }
+              />
+              <span>
+                <span className="font-medium">Notify when site goes down</span>
+                <span className="block text-xs text-muted-foreground">
+                  Disable if you only want recovery messages (e.g. fewer Telegram messages).
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-input"
+                checked={form.uptime_notify_recovery}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, uptime_notify_recovery: e.target.checked }))
+                }
+              />
+              <span>
+                <span className="font-medium">Notify when site recovers</span>
+                <span className="block text-xs text-muted-foreground">
+                  Turn off if you only care about outages.
+                </span>
+              </span>
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="fail-th">Failed checks before DOWN alert</Label>
+                <Input
+                  id="fail-th"
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={form.uptime_fail_threshold}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      uptime_fail_threshold: Math.min(
+                        60,
+                        Math.max(1, parseInt(e.target.value, 10) || 1),
+                      ),
+                    }))
+                  }
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">1 = notify on first failure (default).</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="recv-th">OK checks before RECOVERY alert</Label>
+                <Input
+                  id="recv-th"
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={form.uptime_recovery_threshold}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      uptime_recovery_threshold: Math.min(
+                        60,
+                        Math.max(1, parseInt(e.target.value, 10) || 1),
+                      ),
+                    }))
+                  }
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Require several green checks before “recovered” (reduces false positives).
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

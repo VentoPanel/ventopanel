@@ -18,15 +18,23 @@ func NewSettingsHandler(repo settingsdomain.Repository) *SettingsHandler {
 }
 
 type notificationSettingsRequest struct {
-	TelegramBotToken   string `json:"telegram_bot_token"`
-	TelegramChatID     string `json:"telegram_chat_id"`
-	WhatsAppWebhookURL string `json:"whatsapp_webhook_url"`
+	TelegramBotToken           string `json:"telegram_bot_token"`
+	TelegramChatID             string `json:"telegram_chat_id"`
+	WhatsAppWebhookURL         string `json:"whatsapp_webhook_url"`
+	UptimeNotifyDown           *bool  `json:"uptime_notify_down"`
+	UptimeNotifyRecovery       *bool  `json:"uptime_notify_recovery"`
+	UptimeFailThreshold        *int   `json:"uptime_fail_threshold"`
+	UptimeRecoveryThreshold    *int   `json:"uptime_recovery_threshold"`
 }
 
 type notificationSettingsResponse struct {
-	TelegramBotToken   string `json:"telegram_bot_token"`
-	TelegramChatID     string `json:"telegram_chat_id"`
-	WhatsAppWebhookURL string `json:"whatsapp_webhook_url"`
+	TelegramBotToken           string `json:"telegram_bot_token"`
+	TelegramChatID             string `json:"telegram_chat_id"`
+	WhatsAppWebhookURL         string `json:"whatsapp_webhook_url"`
+	UptimeNotifyDown           bool   `json:"uptime_notify_down"`
+	UptimeNotifyRecovery       bool   `json:"uptime_notify_recovery"`
+	UptimeFailThreshold        int    `json:"uptime_fail_threshold"`
+	UptimeRecoveryThreshold    int    `json:"uptime_recovery_threshold"`
 }
 
 func (h *SettingsHandler) requireAdmin(c *gin.Context) bool {
@@ -57,8 +65,12 @@ func (h *SettingsHandler) GetNotifications(c *gin.Context) {
 
 	// Mask tokens — return only whether they are set, not the actual values.
 	resp := notificationSettingsResponse{
-		TelegramChatID:     cfg.TelegramChatID,
-		WhatsAppWebhookURL: cfg.WhatsAppWebhookURL,
+		TelegramChatID:          cfg.TelegramChatID,
+		WhatsAppWebhookURL:      cfg.WhatsAppWebhookURL,
+		UptimeNotifyDown:        cfg.UptimeNotifyDown,
+		UptimeNotifyRecovery:    cfg.UptimeNotifyRecovery,
+		UptimeFailThreshold:     cfg.UptimeFailThreshold,
+		UptimeRecoveryThreshold: cfg.UptimeRecoveryThreshold,
 	}
 	if cfg.TelegramBotToken != "" {
 		resp.TelegramBotToken = "••••" + cfg.TelegramBotToken[max(0, len(cfg.TelegramBotToken)-4):]
@@ -78,16 +90,36 @@ func (h *SettingsHandler) UpdateNotifications(c *gin.Context) {
 	}
 
 	// If the masked placeholder was sent back unchanged, keep existing value.
-	existing, _ := h.repo.GetNotificationConfig(c.Request.Context())
+	existing, err := h.repo.GetNotificationConfig(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
 	token := req.TelegramBotToken
 	if strings.HasPrefix(token, "••••") {
 		token = existing.TelegramBotToken
 	}
 
 	cfg := settingsdomain.NotificationConfig{
-		TelegramBotToken:   token,
-		TelegramChatID:     req.TelegramChatID,
-		WhatsAppWebhookURL: req.WhatsAppWebhookURL,
+		TelegramBotToken:        token,
+		TelegramChatID:          req.TelegramChatID,
+		WhatsAppWebhookURL:      req.WhatsAppWebhookURL,
+		UptimeNotifyDown:        existing.UptimeNotifyDown,
+		UptimeNotifyRecovery:    existing.UptimeNotifyRecovery,
+		UptimeFailThreshold:     existing.UptimeFailThreshold,
+		UptimeRecoveryThreshold: existing.UptimeRecoveryThreshold,
+	}
+	if req.UptimeNotifyDown != nil {
+		cfg.UptimeNotifyDown = *req.UptimeNotifyDown
+	}
+	if req.UptimeNotifyRecovery != nil {
+		cfg.UptimeNotifyRecovery = *req.UptimeNotifyRecovery
+	}
+	if req.UptimeFailThreshold != nil {
+		cfg.UptimeFailThreshold = settingsdomain.ClampInt(*req.UptimeFailThreshold, 1, 60)
+	}
+	if req.UptimeRecoveryThreshold != nil {
+		cfg.UptimeRecoveryThreshold = settingsdomain.ClampInt(*req.UptimeRecoveryThreshold, 1, 60)
 	}
 	if err := h.repo.SetNotificationConfig(c.Request.Context(), cfg); err != nil {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
