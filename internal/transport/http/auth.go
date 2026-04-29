@@ -1,11 +1,14 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+
+	pgrepo "github.com/your-org/ventopanel/internal/repository/postgres"
 )
 
 const (
@@ -23,11 +26,19 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// apiTokenLookup is an interface so the middleware can resolve API tokens without
+// depending directly on the concrete repo type in every call site.
+type apiTokenLookup interface {
+	GetByHash(ctx context.Context, hash string) (*pgrepo.APIToken, error)
+	TouchLastUsed(ctx context.Context, id string)
+}
+
 type AuthOptions struct {
 	JWTSecret           string
 	AllowHeaderFallback bool
 	ExpectedIssuer      string
 	ExpectedAudience    string
+	APITokenRepo        apiTokenLookup // optional; enables Bearer vp_... API tokens
 }
 
 func AuthContextMiddleware(jwtSecret string, allowHeaderFallback bool) gin.HandlerFunc {
@@ -48,33 +59,51 @@ func AuthContextMiddlewareWithOptions(opts AuthOptions) gin.HandlerFunc {
 		if tokenString == "" {
 			tokenString = strings.TrimSpace(c.Query("token"))
 		}
-		if tokenString != "" && secret != "" {
-			claims := &Claims{}
-			parseOpts := make([]jwt.ParserOption, 0, 2)
-			if expectedIssuer != "" {
-				parseOpts = append(parseOpts, jwt.WithIssuer(expectedIssuer))
+
+		if tokenString != "" {
+			// Try JWT first.
+			if secret != "" {
+				claims := &Claims{}
+				parseOpts := make([]jwt.ParserOption, 0, 2)
+				if expectedIssuer != "" {
+					parseOpts = append(parseOpts, jwt.WithIssuer(expectedIssuer))
+				}
+				if expectedAudience != "" {
+					parseOpts = append(parseOpts, jwt.WithAudience(expectedAudience))
+				}
+				tok, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
+					return []byte(secret), nil
+				}, parseOpts...)
+				if err == nil && tok != nil && tok.Valid {
+					if uid := strings.TrimSpace(claims.UserID); uid != "" {
+						c.Set(contextUserIDKey, uid)
+					}
+					tid := strings.TrimSpace(claims.TeamID)
+					if tid == "" {
+						tid = strings.TrimSpace(claims.TeamIDLegacy)
+					}
+					if tid != "" {
+						c.Set(contextTeamIDKey, tid)
+					}
+					if role := strings.TrimSpace(claims.Role); role != "" {
+						c.Set(contextRoleKey, role)
+					}
+				}
 			}
-			if expectedAudience != "" {
-				parseOpts = append(parseOpts, jwt.WithAudience(expectedAudience))
+
+			// If JWT didn't authenticate and token looks like an API token (vp_…), try DB lookup.
+			if _, authenticated := c.Get(contextUserIDKey); !authenticated &&
+				opts.APITokenRepo != nil &&
+				strings.HasPrefix(tokenString, "vp_") {
+
+				hash := pgrepo.HashToken(tokenString)
+				if apiTok, err := opts.APITokenRepo.GetByHash(c.Request.Context(), hash); err == nil && apiTok != nil {
+					c.Set(contextUserIDKey, apiTok.UserID)
+					// API tokens get admin role for full access; adjust if per-token roles are needed.
+					c.Set(contextRoleKey, "admin")
+					go opts.APITokenRepo.TouchLastUsed(context.Background(), apiTok.ID)
+				}
 			}
-			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
-				return []byte(secret), nil
-			}, parseOpts...)
-		if err == nil && token != nil && token.Valid {
-			if uid := strings.TrimSpace(claims.UserID); uid != "" {
-				c.Set(contextUserIDKey, uid)
-			}
-			tid := strings.TrimSpace(claims.TeamID)
-			if tid == "" {
-				tid = strings.TrimSpace(claims.TeamIDLegacy)
-			}
-			if tid != "" {
-				c.Set(contextTeamIDKey, tid)
-			}
-			if role := strings.TrimSpace(claims.Role); role != "" {
-				c.Set(contextRoleKey, role)
-			}
-		}
 		}
 
 		if opts.AllowHeaderFallback {

@@ -43,7 +43,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, user, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
+	result, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidCreds) {
 			c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid email or password"})
@@ -53,16 +53,94 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	if result.MFARequired {
+		c.JSON(http.StatusOK, gin.H{
+			"mfa_required":  true,
+			"mfa_session":   result.MFASession,
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, authResponse{
-		Token: token,
-		Email: user.Email,
-		Role:  user.Role,
+		Token: result.Token,
+		Email: result.User.Email,
+		Role:  result.User.Role,
 	})
 }
 
+// MFAVerify handles POST /auth/mfa — second step after password login when 2FA is enabled.
+func (h *AuthHandler) MFAVerify(c *gin.Context) {
+	var req struct {
+		MFASession string `json:"mfa_session" binding:"required"`
+		Code       string `json:"code"        binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	token, user, err := h.service.VerifyMFA(c.Request.Context(), req.MFASession, req.Code)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, authResponse{Token: token, Email: user.Email, Role: user.Role})
+}
+
+// TOTPSetup handles GET /auth/totp/setup — generates a new TOTP secret (not yet active).
+func (h *AuthHandler) TOTPSetup(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+	secret, url, err := h.service.SetupTOTP(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"secret": secret, "url": url})
+}
+
+// TOTPEnable handles POST /auth/totp/enable — verifies the first code and activates 2FA.
+func (h *AuthHandler) TOTPEnable(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	if err := h.service.EnableTOTP(c.Request.Context(), userID, req.Code); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "2FA enabled"})
+}
+
+// TOTPDisable handles POST /auth/totp/disable — verifies the code and disables 2FA.
+func (h *AuthHandler) TOTPDisable(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	if err := h.service.DisableTOTP(c.Request.Context(), userID, req.Code); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "2FA disabled"})
+}
+
 // Register creates a new user account.
-// The first user is always created as admin (bootstrap).
-// Subsequent registrations require an admin JWT.
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -82,9 +160,23 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"id":     user.ID,
-		"email":  user.Email,
-		"role":   user.Role,
+		"id":      user.ID,
+		"email":   user.Email,
+		"role":    user.Role,
 		"team_id": user.TeamID,
 	})
+}
+
+// requireUserID extracts the authenticated user's ID from context.
+func requireUserID(c *gin.Context) (string, bool) {
+	uid, exists := c.Get(contextUserIDKey)
+	if !exists || uid == "" {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "authentication required"})
+		return "", false
+	}
+	if id, ok := uid.(string); ok && id != "" {
+		return id, true
+	}
+	c.JSON(http.StatusUnauthorized, errorResponse{Error: "authentication required"})
+	return "", false
 }

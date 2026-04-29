@@ -31,9 +31,9 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) error {
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	u := &domain.User{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, team_id, role, created_at, updated_at
+		SELECT id, email, password_hash, team_id, role, totp_secret, totp_enabled, created_at, updated_at
 		FROM users WHERE email = $1`, email,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TeamID, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TeamID, &u.Role, &u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -46,9 +46,9 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	u := &domain.User{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, team_id, role, created_at, updated_at
+		SELECT id, email, password_hash, team_id, role, totp_secret, totp_enabled, created_at, updated_at
 		FROM users WHERE id = $1`, id,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TeamID, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TeamID, &u.Role, &u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -66,7 +66,7 @@ func (r *UserRepository) Count(ctx context.Context) (int64, error) {
 
 func (r *UserRepository) List(ctx context.Context) ([]domain.User, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, email, password_hash, team_id, role, created_at, updated_at
+		SELECT id, email, password_hash, team_id, role, totp_secret, totp_enabled, created_at, updated_at
 		FROM users ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (r *UserRepository) List(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TeamID, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.TeamID, &u.Role, &u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -87,6 +87,20 @@ func (r *UserRepository) List(ctx context.Context) ([]domain.User, error) {
 func (r *UserRepository) UpdateRole(ctx context.Context, id, role string) error {
 	tag, err := r.db.Exec(ctx,
 		`UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2`, role, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) UpdateTOTP(ctx context.Context, id, secret string, enabled bool) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET totp_secret=$1, totp_enabled=$2, updated_at=NOW() WHERE id=$3`,
+		secret, enabled, id,
+	)
 	if err != nil {
 		return err
 	}

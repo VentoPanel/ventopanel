@@ -25,6 +25,8 @@ type User struct {
 	PasswordHash string
 	TeamID       string
 	Role         string
+	TOTPSecret   string
+	TOTPEnabled  bool
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -36,5 +38,6 @@ type Repository interface {
 	Count(ctx context.Context) (int64, error)
 	List(ctx context.Context) ([]User, error)
 	UpdateRole(ctx context.Context, id, role string) error
+	UpdateTOTP(ctx context.Context, id, secret string, enabled bool) error
 	Delete(ctx context.Context, id string) error
 }

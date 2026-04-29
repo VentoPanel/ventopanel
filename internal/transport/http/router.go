@@ -22,6 +22,7 @@ func RegisterRoutes(
 	dashboardHandler *DashboardHandler,
 	templateHandler *TemplateHandler,
 	siteDomainHandler *SiteDomainHandler,
+	apiTokenHandler *APITokenHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -29,7 +30,14 @@ func RegisterRoutes(
 	{
 		api.GET("/health", healthHandler.Get)
 		api.POST("/auth/login", authHandler.Login)
+		api.POST("/auth/mfa", authHandler.MFAVerify)
 		api.POST("/auth/register", authHandler.Register)
+		api.GET("/auth/totp/setup", authHandler.TOTPSetup)
+		api.POST("/auth/totp/enable", authHandler.TOTPEnable)
+		api.POST("/auth/totp/disable", authHandler.TOTPDisable)
+		api.GET("/api-tokens", apiTokenHandler.ListTokens)
+		api.POST("/api-tokens", apiTokenHandler.CreateToken)
+		api.DELETE("/api-tokens/:id", apiTokenHandler.RevokeToken)
 		if devAuthHandler != nil {
 			api.POST("/dev/token", devAuthHandler.IssueToken)
 		}

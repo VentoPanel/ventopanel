@@ -78,6 +78,7 @@ func main() {
 	serverRepo := postgresrepo.NewServerRepository(pgPool, encryptor)
 	siteRepo := postgresrepo.NewSiteRepository(pgPool)
 	siteDomainRepo := postgresrepo.NewSiteDomainRepository(pgPool)
+	apiTokenRepo := postgresrepo.NewAPITokenRepository(pgPool)
 	envRepo := postgresrepo.NewEnvRepository(pgPool, encryptor)
 	uptimeRepo := postgresrepo.NewUptimeRepository(pgPool)
 	teamRepo := postgresrepo.NewTeamRepository(pgPool)
@@ -125,7 +126,7 @@ func main() {
 	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
 	dashboardRepo := postgresrepo.NewDashboardRepository(pgPool)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo, apiTokenRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -179,6 +180,7 @@ func buildRouter(
 	backupService *backupsvc.Service,
 	dashboardRepo *postgresrepo.DashboardRepository,
 	siteDomainRepo *postgresrepo.SiteDomainRepository,
+	apiTokenRepo *postgresrepo.APITokenRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -193,6 +195,7 @@ func buildRouter(
 		AllowHeaderFallback: cfg.AuthAllowHeaders,
 		ExpectedIssuer:      cfg.AuthJWTIssuer,
 		ExpectedAudience:    cfg.AuthJWTAudience,
+		APITokenRepo:        apiTokenRepo,
 	}))
 
 	healthHandler := httptransport.NewHealthHandler()
@@ -213,8 +216,9 @@ func buildRouter(
 	dashboardHandler := httptransport.NewDashboardHandler(dashboardRepo)
 	templateHandler := httptransport.NewTemplateHandler()
 	siteDomainHandler := httptransport.NewSiteDomainHandler(siteDomainRepo, teamService)
+	apiTokenHandler := httptransport.NewAPITokenHandler(apiTokenRepo)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler)
 
 	return engine
 }

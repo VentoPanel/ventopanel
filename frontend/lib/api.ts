@@ -182,7 +182,18 @@ export interface LoginResponse {
   role: string;
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export interface LoginMFAResponse {
+  mfa_required: true;
+  mfa_session: string;
+}
+
+export type LoginResult = LoginResponse | LoginMFAResponse;
+
+export function isMFARequired(r: LoginResult): r is LoginMFAResponse {
+  return (r as LoginMFAResponse).mfa_required === true;
+}
+
+export async function login(email: string, password: string): Promise<LoginResult> {
   const res = await fetch("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -192,7 +203,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error ?? "Login failed");
   }
-  return res.json() as Promise<LoginResponse>;
+  return res.json() as Promise<LoginResult>;
 }
 
 export async function registerUser(params: {
@@ -704,5 +715,73 @@ export async function updateBackupSettings(s: Partial<BackupSettings>): Promise<
   await apiFetch("/settings/backup", {
     method: "PATCH",
     body: JSON.stringify(s),
+  });
+}
+
+// ── API Tokens ────────────────────────────────────────────────────────────────
+
+export interface APIToken {
+  id: string;
+  name: string;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface CreatedToken extends APIToken {
+  token: string; // plaintext — shown once
+}
+
+export async function fetchAPITokens(): Promise<APIToken[]> {
+  const data = await apiFetch<{ items: APIToken[] }>("/api-tokens");
+  return data.items ?? [];
+}
+
+export async function createAPIToken(name: string): Promise<CreatedToken> {
+  return apiFetch<CreatedToken>("/api-tokens", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function revokeAPIToken(id: string): Promise<void> {
+  await apiFetch(`/api-tokens/${id}`, { method: "DELETE" });
+}
+
+// ── 2FA / TOTP ────────────────────────────────────────────────────────────────
+
+export interface TOTPSetup {
+  secret: string;
+  url: string;
+}
+
+export async function setupTOTP(): Promise<TOTPSetup> {
+  return apiFetch<TOTPSetup>("/auth/totp/setup");
+}
+
+export async function enableTOTP(code: string): Promise<void> {
+  await apiFetch("/auth/totp/enable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function disableTOTP(code: string): Promise<void> {
+  await apiFetch("/auth/totp/disable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function verifyMFA(mfa_session: string, code: string): Promise<{ token: string; email: string; role: string }> {
+  return apiFetch("/auth/mfa", {
+    method: "POST",
+    body: JSON.stringify({ mfa_session, code }),
+  });
+}
+
+export async function inviteUser(email: string, password: string, team_id: string): Promise<{ id: string; email: string; role: string }> {
+  return apiFetch("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password, team_id }),
   });
 }

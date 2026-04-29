@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS api_tokens;
+ALTER TABLE users DROP COLUMN IF EXISTS totp_secret;
+ALTER TABLE users DROP COLUMN IF EXISTS totp_enabled;
