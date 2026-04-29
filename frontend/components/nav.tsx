@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Server, Globe, LogOut,
-  ClipboardList, Settings, Users, Activity, DatabaseBackup, BarChart2, Layers, ShieldCheck, HardDrive,
+  ClipboardList, Settings, Users, Activity, DatabaseBackup, BarChart2, Layers, ShieldCheck, HardDrive, TerminalSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearToken } from "@/lib/api";
@@ -20,6 +20,7 @@ const links = [
   { href: "/backups", label: "Backups", icon: DatabaseBackup },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/files", label: "Files", icon: HardDrive },
+  { href: "/terminal", label: "Terminal", icon: TerminalSquare },
   { href: "/users", label: "Team", icon: Users },
   { href: "/security", label: "Security", icon: ShieldCheck },
   { href: "/settings", label: "Settings", icon: Settings },

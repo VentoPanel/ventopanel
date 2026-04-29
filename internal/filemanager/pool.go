@@ -105,6 +105,10 @@ func (p *SSHPool) Invalidate(serverID string) {
 
 // ─── SSH dialer ───────────────────────────────────────────────────────────────
 
+// DialSSH is the public entry-point for packages that need a raw *ssh.Client
+// without going through the pool (e.g. terminal sessions).
+func DialSSH(cfg ServerDialConfig) (*ssh.Client, error) { return dialSSH(cfg) }
+
 func dialSSH(cfg ServerDialConfig) (*ssh.Client, error) {
 	var authMethods []ssh.AuthMethod
 
