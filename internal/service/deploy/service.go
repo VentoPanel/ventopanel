@@ -276,6 +276,7 @@ type ContainerInfo struct {
 }
 
 // GetContainerInfo returns live Docker container stats for a git-deployed site.
+// Uses two separate SSH calls so each command is simple and debuggable.
 func (s *Service) GetContainerInfo(ctx context.Context, siteID string) (*ContainerInfo, error) {
 	site, err := s.siteRepo.GetByID(ctx, siteID)
 	if err != nil {
@@ -290,22 +291,38 @@ func (s *Service) GetContainerInfo(ctx context.Context, siteID string) (*Contain
 	}
 
 	name := fmt.Sprintf("ventopanel_%s", siteID)
-	cmd := fmt.Sprintf(
-		`sh -c 'I=$(docker inspect --format "{{.State.Status}}|{{.State.StartedAt}}" %s 2>/dev/null) && T=$(docker stats --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}" %s 2>/dev/null) && printf "%%s|%%s\n" "$I" "$T" || echo "not_found|||"'`,
-		name, name,
-	)
-	out, _ := s.ssh.RunOutput(ctx, *server, cmd)
-	out = strings.TrimSpace(out)
-	parts := strings.SplitN(out, "|", 4)
-	for len(parts) < 4 {
+
+	// 1. docker inspect — instant, works for any state (running/exited/stopped).
+	inspectOut, _ := s.ssh.RunOutput(ctx, *server,
+		fmt.Sprintf(`docker inspect --format '{{.State.Status}}|{{.State.StartedAt}}' %s 2>/dev/null || echo 'not_found|'`, name))
+	inspectOut = strings.TrimSpace(inspectOut)
+
+	parts := strings.SplitN(inspectOut, "|", 2)
+	for len(parts) < 2 {
 		parts = append(parts, "")
 	}
-	return &ContainerInfo{
-		Status:    parts[0],
-		StartedAt: parts[1],
-		CPUPerc:   parts[2],
-		MemUsage:  parts[3],
-	}, nil
+	info := &ContainerInfo{
+		Status:    strings.TrimSpace(parts[0]),
+		StartedAt: strings.TrimSpace(parts[1]),
+	}
+	if info.Status == "" {
+		info.Status = "not_found"
+	}
+
+	// 2. docker stats — only meaningful when the container is running.
+	if info.Status == "running" {
+		statsOut, _ := s.ssh.RunOutput(ctx, *server,
+			fmt.Sprintf(`docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}' %s 2>/dev/null || echo '|'`, name))
+		statsOut = strings.TrimSpace(statsOut)
+		sp := strings.SplitN(statsOut, "|", 2)
+		for len(sp) < 2 {
+			sp = append(sp, "")
+		}
+		info.CPUPerc = strings.TrimSpace(sp[0])
+		info.MemUsage = strings.TrimSpace(sp[1])
+	}
+
+	return info, nil
 }
 
 // GetContainerLogs returns the last n lines of Docker container logs.
