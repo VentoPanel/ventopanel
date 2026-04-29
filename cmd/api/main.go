@@ -122,8 +122,9 @@ func main() {
 	alertService := alertsvc.NewService().WithSettingsRepo(settingsRepo)
 	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService, settingsRepo)
 	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
+	dashboardRepo := postgresrepo.NewDashboardRepository(pgPool)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -175,6 +176,7 @@ func buildRouter(
 	siteRepo *postgresrepo.SiteRepository,
 	uptimeRepo *postgresrepo.UptimeRepository,
 	backupService *backupsvc.Service,
+	dashboardRepo *postgresrepo.DashboardRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -206,8 +208,9 @@ func buildRouter(
 	webhookHandler := httptransport.NewWebhookHandler(siteRepo, deployService)
 	uptimeHandler := httptransport.NewUptimeHandler(uptimeRepo, teamService)
 	backupHandler := httptransport.NewBackupHandler(backupService)
+	dashboardHandler := httptransport.NewDashboardHandler(dashboardRepo)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler)
 
 	return engine
 }

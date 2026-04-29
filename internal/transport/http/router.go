@@ -19,6 +19,7 @@ func RegisterRoutes(
 	webhookHandler *WebhookHandler,
 	uptimeHandler *UptimeHandler,
 	backupHandler *BackupHandler,
+	dashboardHandler *DashboardHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -75,5 +76,8 @@ func RegisterRoutes(
 		api.GET("/users", userHandler.List)
 		api.PATCH("/users/:id/role", userHandler.UpdateRole)
 		api.DELETE("/users/:id", userHandler.Delete)
+		api.GET("/dashboard/summary", dashboardHandler.GetSummary)
+		api.GET("/dashboard/uptime-trend", dashboardHandler.GetUptimeTrend)
+		api.GET("/dashboard/deploy-trend", dashboardHandler.GetDeployTrend)
 	}
 }

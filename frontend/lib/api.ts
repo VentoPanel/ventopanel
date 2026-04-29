@@ -526,3 +526,67 @@ export async function downloadBackup(name: string): Promise<void> {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+// ── Metrics Dashboard ─────────────────────────────────────────────────────────
+
+export interface DashboardSiteSummary {
+  total: number;
+  deployed: number;
+  failed: number;
+  deploying: number;
+  other: number;
+}
+
+export interface DashboardServerSummary {
+  total: number;
+  connected: number;
+  failed: number;
+  other: number;
+}
+
+export interface DashboardUptimeSummary {
+  sites_up: number;
+  sites_down: number;
+  avg_pct: number;
+}
+
+export interface DashboardDeploySummary {
+  today_24h_success: number;
+  today_24h_failed: number;
+  all_time_success: number;
+  all_time_failed: number;
+}
+
+export interface DashboardSummary {
+  sites: DashboardSiteSummary;
+  servers: DashboardServerSummary;
+  uptime: DashboardUptimeSummary;
+  deploys: DashboardDeploySummary;
+}
+
+export interface UptimeTrendPoint {
+  hour: string;
+  up_count: number;
+  down_count: number;
+  avg_latency_ms: number;
+}
+
+export interface DeployTrendPoint {
+  day: string;
+  success: number;
+  failed: number;
+}
+
+export async function fetchDashboardSummary(): Promise<DashboardSummary> {
+  return apiFetch<DashboardSummary>("/dashboard/summary");
+}
+
+export async function fetchUptimeTrend(): Promise<UptimeTrendPoint[]> {
+  const data = await apiFetch<{ points: UptimeTrendPoint[] }>("/dashboard/uptime-trend");
+  return data.points ?? [];
+}
+
+export async function fetchDeployTrend(): Promise<DeployTrendPoint[]> {
+  const data = await apiFetch<{ points: DeployTrendPoint[] }>("/dashboard/deploy-trend");
+  return data.points ?? [];
+}
