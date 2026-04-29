@@ -14,14 +14,21 @@ import (
 )
 
 type FileManagerHandler struct {
-	svc *filemanager.Service
+	factory *filemanager.Factory
 }
 
-func NewFileManagerHandler(svc *filemanager.Service) *FileManagerHandler {
-	return &FileManagerHandler{svc: svc}
+func NewFileManagerHandler(factory *filemanager.Factory) *FileManagerHandler {
+	return &FileManagerHandler{factory: factory}
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+// fmSvc resolves the correct *filemanager.Service for this request.
+// If the "server_id" query param is present the handler uses a remote SFTP
+// service; otherwise it falls back to the local filesystem service.
+func (h *FileManagerHandler) fmSvc(c *gin.Context) (*filemanager.Service, error) {
+	return h.factory.Resolve(c.Request.Context(), c.Query("server_id"))
+}
 
 func fmPath(c *gin.Context) string {
 	p := c.Query("path")
@@ -46,19 +53,29 @@ func fmErr(c *gin.Context, err error) {
 
 // ── Basic CRUD ────────────────────────────────────────────────────────────────
 
-// ListDir GET /files?path=...
+// ListDir GET /files?path=...&server_id=...
 func (h *FileManagerHandler) ListDir(c *gin.Context) {
-	items, err := h.svc.ListDir(fmPath(c))
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
+	items, err := svc.ListDir(fmPath(c))
 	if err != nil {
 		fmErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "root": h.svc.RootPath})
+	c.JSON(http.StatusOK, gin.H{"items": items, "root": svc.RootPath, "server_id": c.Query("server_id")})
 }
 
-// ReadFile GET /files/content?path=...
+// ReadFile GET /files/content?path=...&server_id=...
 func (h *FileManagerHandler) ReadFile(c *gin.Context) {
-	data, err := h.svc.ReadFile(fmPath(c))
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
+	data, err := svc.ReadFile(fmPath(c))
 	if err != nil {
 		fmErr(c, err)
 		return
@@ -66,8 +83,13 @@ func (h *FileManagerHandler) ReadFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"content": string(data), "path": fmPath(c)})
 }
 
-// WriteFile PUT /files/content?path=...
+// WriteFile PUT /files/content?path=...&server_id=...
 func (h *FileManagerHandler) WriteFile(c *gin.Context) {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
 	var body struct {
 		Content string `json:"content"`
 	}
@@ -75,33 +97,48 @@ func (h *FileManagerHandler) WriteFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	if err := h.svc.WriteFile(fmPath(c), []byte(body.Content)); err != nil {
+	if err := svc.WriteFile(fmPath(c), []byte(body.Content)); err != nil {
 		fmErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "saved"})
 }
 
-// DeletePath DELETE /files?path=...
+// DeletePath DELETE /files?path=...&server_id=...
 func (h *FileManagerHandler) DeletePath(c *gin.Context) {
-	if err := h.svc.Delete(fmPath(c)); err != nil {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
+	if err := svc.Delete(fmPath(c)); err != nil {
 		fmErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-// CreateDir POST /files/dir?path=...
+// CreateDir POST /files/dir?path=...&server_id=...
 func (h *FileManagerHandler) CreateDir(c *gin.Context) {
-	if err := h.svc.CreateDir(fmPath(c)); err != nil {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
+	if err := svc.CreateDir(fmPath(c)); err != nil {
 		fmErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"status": "created"})
 }
 
-// Rename POST /files/rename
+// Rename POST /files/rename?server_id=...
 func (h *FileManagerHandler) Rename(c *gin.Context) {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
 	var body struct {
 		OldPath string `json:"old_path" binding:"required"`
 		NewPath string `json:"new_path" binding:"required"`
@@ -110,7 +147,7 @@ func (h *FileManagerHandler) Rename(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	if err := h.svc.Rename(body.OldPath, body.NewPath); err != nil {
+	if err := svc.Rename(body.OldPath, body.NewPath); err != nil {
 		fmErr(c, err)
 		return
 	}
@@ -119,8 +156,13 @@ func (h *FileManagerHandler) Rename(c *gin.Context) {
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 
-// Upload POST /files/upload?path=<directory>
+// Upload POST /files/upload?path=<directory>&server_id=...
 func (h *FileManagerHandler) Upload(c *gin.Context) {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
 	dir := fmPath(c)
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -140,7 +182,7 @@ func (h *FileManagerHandler) Upload(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, errorResponse{Error: openErr.Error()})
 			return
 		}
-		_, writeErr := h.svc.Upload(destPath, src)
+		_, writeErr := svc.Upload(destPath, src)
 		src.Close()
 		if writeErr != nil {
 			fmErr(c, writeErr)
@@ -153,22 +195,22 @@ func (h *FileManagerHandler) Upload(c *gin.Context) {
 
 // ── Smart Download ────────────────────────────────────────────────────────────
 
-// Download GET /files/download?path=...
-//
-// Smart: if path is a regular file — serves it directly with correct MIME type.
-// If path is a directory — streams it as a ZIP archive on-the-fly via io.Pipe,
-// without creating any temporary file on disk.
+// Download GET /files/download?path=...&server_id=...
 func (h *FileManagerHandler) Download(c *gin.Context) {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
 	p := fmPath(c)
 
-	isDir, err := h.svc.IsDir(p)
+	isDir, err := svc.IsDir(p)
 	if err != nil {
 		fmErr(c, err)
 		return
 	}
 
 	if isDir {
-		// Stream directory as ZIP via io.Pipe — no temp file.
 		name := filepath.Base(p) + ".zip"
 		c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
 		c.Header("Content-Type", "application/zip")
@@ -176,21 +218,15 @@ func (h *FileManagerHandler) Download(c *gin.Context) {
 		c.Status(http.StatusOK)
 
 		pr, pw := io.Pipe()
-
-		// Writer goroutine: streams zip into the pipe writer.
 		go func() {
-			err := h.svc.StreamDirAsZip(p, pw)
-			pw.CloseWithError(err) // signals EOF or error to reader
+			pw.CloseWithError(svc.StreamDirAsZip(p, pw))
 		}()
-
-		// Reader side is copied directly to the HTTP response.
 		io.Copy(c.Writer, pr) //nolint:errcheck
 		pr.Close()
 		return
 	}
 
-	// Regular file download.
-	f, size, err := h.svc.Download(p)
+	f, size, err := svc.Download(p)
 	if err != nil {
 		fmErr(c, err)
 		return
@@ -213,9 +249,14 @@ func (h *FileManagerHandler) Download(c *gin.Context) {
 
 // ── Compress ──────────────────────────────────────────────────────────────────
 
-// Compress POST /files/compress
+// Compress POST /files/compress?server_id=...
 // Body: { "src_paths": ["/dir1", "/file.txt"], "dest_zip": "/archive.zip" }
 func (h *FileManagerHandler) Compress(c *gin.Context) {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
 	var body struct {
 		SrcPaths []string `json:"src_paths" binding:"required,min=1"`
 		DestZip  string   `json:"dest_zip"  binding:"required"`
@@ -224,7 +265,7 @@ func (h *FileManagerHandler) Compress(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	if err := h.svc.Compress(body.SrcPaths, body.DestZip); err != nil {
+	if err := svc.Compress(body.SrcPaths, body.DestZip); err != nil {
 		fmErr(c, err)
 		return
 	}
@@ -233,9 +274,14 @@ func (h *FileManagerHandler) Compress(c *gin.Context) {
 
 // ── Extract ───────────────────────────────────────────────────────────────────
 
-// Extract POST /files/extract
+// Extract POST /files/extract?server_id=...
 // Body: { "zip_path": "/archive.zip", "dest_dir": "/output" }
 func (h *FileManagerHandler) Extract(c *gin.Context) {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
 	var body struct {
 		ZipPath string `json:"zip_path" binding:"required"`
 		DestDir string `json:"dest_dir" binding:"required"`
@@ -244,7 +290,7 @@ func (h *FileManagerHandler) Extract(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	if err := h.svc.Extract(body.ZipPath, body.DestDir); err != nil {
+	if err := svc.Extract(body.ZipPath, body.DestDir); err != nil {
 		fmErr(c, err)
 		return
 	}
@@ -253,9 +299,14 @@ func (h *FileManagerHandler) Extract(c *gin.Context) {
 
 // ── Permissions ───────────────────────────────────────────────────────────────
 
-// SetPermissions PATCH /files/permissions?path=...
+// SetPermissions PATCH /files/permissions?path=...&server_id=...
 // Body: { "mode": "755" }
 func (h *FileManagerHandler) SetPermissions(c *gin.Context) {
+	svc, err := h.fmSvc(c)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
 	var body struct {
 		Mode string `json:"mode" binding:"required"`
 	}
@@ -263,7 +314,7 @@ func (h *FileManagerHandler) SetPermissions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	if err := h.svc.SetPermissions(fmPath(c), body.Mode); err != nil {
+	if err := svc.SetPermissions(fmPath(c), body.Mode); err != nil {
 		fmErr(c, err)
 		return
 	}

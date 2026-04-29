@@ -12,23 +12,35 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+	"golang.org/x/crypto/ssh"
 )
 
 // Service provides jailed filesystem operations backed by an afero.Fs.
-// All paths supplied by callers are relative to RootPath; any attempt to
+// All paths supplied by callers are validated with safePath; any attempt to
 // escape the root via ".." or absolute paths is rejected with ErrForbidden.
+//
+// When sshCli is non-nil (remote SFTP mode) the Compress and Extract methods
+// run native zip / unzip commands on the remote server instead of processing
+// archives in-process, because SFTP streaming is inefficient for large trees.
 type Service struct {
 	fs       afero.Fs
-	RootPath string // absolute path on the host OS
+	RootPath string // "/" for remote services, absolute local path for local
+	sshCli   *ssh.Client // nil → local mode; non-nil → remote SSH mode
 }
 
-// NewService creates a new Service.
-// rootPath is the absolute directory that all operations are restricted to.
+// NewService creates a Service backed by the local OS filesystem, jailed to rootPath.
 func NewService(rootPath string) *Service {
 	return &Service{
 		fs:       afero.NewBasePathFs(afero.NewOsFs(), rootPath),
 		RootPath: rootPath,
 	}
+}
+
+// NewServiceWithFs creates a Service using an already-constructed afero.Fs.
+// Used by Factory.ForServer to pass in an SFTP-backed filesystem.
+// sshCli may be nil; if non-nil, it is used for SSH-command-based archiving.
+func NewServiceWithFs(fs afero.Fs, rootPath string, sshCli *ssh.Client) *Service {
+	return &Service{fs: fs, RootPath: rootPath, sshCli: sshCli}
 }
 
 // safePath validates that a caller-supplied relative path does not escape the
@@ -255,8 +267,34 @@ func (s *Service) StreamDirAsZip(relPath string, w io.Writer) error {
 // ── Archive: Compress ────────────────────────────────────────────────────────
 
 // Compress creates a ZIP archive at destZip containing all paths in srcPaths.
-// Each srcPath is validated with safePath. Directories are added recursively.
+// In remote mode it delegates to the server's native zip(1) command.
+// In local mode it builds the ZIP in-process.
 func (s *Service) Compress(srcPaths []string, destZip string) error {
+	if s.sshCli != nil {
+		return s.compressSSH(srcPaths, destZip)
+	}
+	return s.compressLocal(srcPaths, destZip)
+}
+
+// compressSSH runs "zip -r destZip src..." on the remote server.
+func (s *Service) compressSSH(srcPaths []string, destZip string) error {
+	cleanDest, err := safePath(destZip)
+	if err != nil {
+		return err
+	}
+	args := []string{"zip", "-r", shellescape(cleanDest)}
+	for _, p := range srcPaths {
+		clean, err := safePath(p)
+		if err != nil {
+			return err
+		}
+		args = append(args, shellescape(clean))
+	}
+	return sshRun(s.sshCli, strings.Join(args, " "))
+}
+
+// compressLocal creates a ZIP archive in-process (original implementation).
+func (s *Service) compressLocal(srcPaths []string, destZip string) error {
 	cleanDest, err := safePath(destZip)
 	if err != nil {
 		return err
@@ -337,8 +375,33 @@ func (s *Service) addFileToZip(zw *zip.Writer, fsPath, entryName string) error {
 // ── Archive: Extract ─────────────────────────────────────────────────────────
 
 // Extract unpacks the ZIP archive at zipPath into destDir.
-// Both paths are validated with safePath. No files outside destDir are created.
+// In remote mode it delegates to the server's native unzip(1) command.
+// In local mode it unpacks the archive in-process.
 func (s *Service) Extract(zipPath string, destDir string) error {
+	if s.sshCli != nil {
+		return s.extractSSH(zipPath, destDir)
+	}
+	return s.extractLocal(zipPath, destDir)
+}
+
+// extractSSH runs "unzip -o zipPath -d destDir" on the remote server.
+// Falls back to "jar xf" (Java) or "python3 -c ..." are not attempted;
+// if unzip is unavailable the error message will be clear.
+func (s *Service) extractSSH(zipPath, destDir string) error {
+	cleanZip, err := safePath(zipPath)
+	if err != nil {
+		return err
+	}
+	cleanDest, err := safePath(destDir)
+	if err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf("unzip -o %s -d %s", shellescape(cleanZip), shellescape(cleanDest))
+	return sshRun(s.sshCli, cmd)
+}
+
+// extractLocal unpacks the ZIP archive in-process.
+func (s *Service) extractLocal(zipPath string, destDir string) error {
 	cleanZip, err := safePath(zipPath)
 	if err != nil {
 		return err
@@ -410,4 +473,33 @@ func mapErr(err error) error {
 		return fmt.Errorf("%w: %s", ErrNotFound, err)
 	}
 	return err
+}
+
+// sshRun executes a shell command on the remote server and returns any error.
+// stderr is captured and included in the returned error for diagnostics.
+func sshRun(client *ssh.Client, command string) error {
+	sess, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("ssh new session: %w", err)
+	}
+	defer sess.Close()
+
+	var stderr strings.Builder
+	sess.Stderr = &stderr
+
+	if err := sess.Run(command); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
+}
+
+// shellescape wraps a string in single quotes for safe use in POSIX shell commands.
+// Single quotes inside the string are handled by ending the quote, inserting the
+// literal quote, then reopening the quote.
+func shellescape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

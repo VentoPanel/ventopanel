@@ -127,7 +127,7 @@ func main() {
 	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
 	dashboardRepo := postgresrepo.NewDashboardRepository(pgPool)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo, apiTokenRepo, cfg.FileManagerRoot)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo, apiTokenRepo, serverRepo, cfg.FileManagerRoot)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -182,6 +182,7 @@ func buildRouter(
 	dashboardRepo *postgresrepo.DashboardRepository,
 	siteDomainRepo *postgresrepo.SiteDomainRepository,
 	apiTokenRepo *postgresrepo.APITokenRepository,
+	serverRepo *postgresrepo.ServerRepository,
 	fileManagerRoot string,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
@@ -220,8 +221,8 @@ func buildRouter(
 	siteDomainHandler := httptransport.NewSiteDomainHandler(siteDomainRepo, teamService)
 	apiTokenHandler := httptransport.NewAPITokenHandler(apiTokenRepo)
 
-	fmSvc := filemanagerpkg.NewService(fileManagerRoot)
-	fileManagerHandler := httptransport.NewFileManagerHandler(fmSvc)
+	fmFactory := filemanagerpkg.NewFactory(serverRepo, fileManagerRoot)
+	fileManagerHandler := httptransport.NewFileManagerHandler(fmFactory)
 
 	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler, fileManagerHandler)
 
