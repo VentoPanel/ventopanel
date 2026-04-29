@@ -362,11 +362,24 @@ func (s *Service) GetContainerInfo(ctx context.Context, siteID string) (*Contain
 	}
 
 	// 2. docker stats — only meaningful when the container is running.
+	// docker stats --no-stream always returns 0% on the first call because it
+	// needs two data points to compute a CPU delta. We call it twice; the
+	// daemon caches the first reading, so the second call gives a real value.
 	if info.Status == "running" {
-		statsOut, _ := s.ssh.RunOutput(ctx, *server,
-			fmt.Sprintf(`docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}' %s 2>/dev/null || echo '|'`, name))
-		statsOut = strings.TrimSpace(statsOut)
-		sp := strings.SplitN(statsOut, "|", 2)
+		statsCmd := fmt.Sprintf(
+			`docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}' %s 2>/dev/null; `+
+				`docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}' %s 2>/dev/null || echo '|'`,
+			name, name,
+		)
+		statsOut, _ := s.ssh.RunOutput(ctx, *server, statsCmd)
+		// Take the last non-empty line (second reading).
+		var lastLine string
+		for _, line := range strings.Split(strings.TrimSpace(statsOut), "\n") {
+			if l := strings.TrimSpace(line); l != "" {
+				lastLine = l
+			}
+		}
+		sp := strings.SplitN(lastLine, "|", 2)
 		for len(sp) < 2 {
 			sp = append(sp, "")
 		}

@@ -92,6 +92,8 @@ func (s *Service) WithSSH(executor deploydomain.SSHExecutor) *Service {
 }
 
 // GetCertInfo fetches SSL certificate expiry for the given site via SSH.
+// It always returns a usable *SSLCertInfo (status "no_cert" on any error/timeout)
+// so the caller never has to handle a nil result for display purposes.
 func (s *Service) GetCertInfo(ctx context.Context, siteID string) (*SSLCertInfo, error) {
 	site, err := s.siteRepo.GetByID(ctx, siteID)
 	if err != nil {
@@ -109,20 +111,25 @@ func (s *Service) GetCertInfo(ctx context.Context, siteID string) (*SSLCertInfo,
 		return info, nil
 	}
 
+	// Bound the SSH call to 8 s so a slow/busy server doesn't block the UI.
+	sshCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
 	cmd := "openssl x509 -enddate -noout -in /etc/letsencrypt/live/" + site.Domain + "/fullchain.pem 2>/dev/null || echo no_cert"
-	out, err := s.ssh.RunOutput(ctx, *server, cmd)
+	out, err := s.ssh.RunOutput(sshCtx, *server, cmd)
 	if err != nil || strings.TrimSpace(out) == "no_cert" || out == "" {
+		// Treat SSH errors / timeouts as "no cert info available" — not a hard error.
 		return info, nil
 	}
 
 	// Output format: "notAfter=May 28 12:00:00 2026 GMT"
 	out = strings.TrimSpace(out)
 	out = strings.TrimPrefix(out, "notAfter=")
-	expiry, err := time.Parse("Jan _2 15:04:05 2006 MST", out)
-	if err != nil {
-		expiry, err = time.Parse("Jan  2 15:04:05 2006 MST", out)
+	expiry, parseErr := time.Parse("Jan _2 15:04:05 2006 MST", out)
+	if parseErr != nil {
+		expiry, parseErr = time.Parse("Jan  2 15:04:05 2006 MST", out)
 	}
-	if err != nil {
+	if parseErr != nil {
 		return info, nil
 	}
 

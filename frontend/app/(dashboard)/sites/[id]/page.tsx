@@ -135,12 +135,14 @@ export default function SiteDetailPage({
 
   const { isAdmin, canWrite } = useAuth();
 
-  const { data: sslInfo } = useQuery({
+  const { data: sslInfo, isError: sslError } = useQuery({
     queryKey: ["site-ssl", id],
     queryFn: () => fetchSiteSSL(id),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     refetchIntervalInBackground: false,
-    retry: false,
+    staleTime: 60_000,   // keep last value visible while re-fetching
+    retry: 2,
+    retryDelay: 3000,
   });
 
   const renewSSL = useMutation({
@@ -440,24 +442,25 @@ export default function SiteDetailPage({
         </div>
       )}
 
-      {/* SSL Status */}
-      {sslInfo && (
+      {/* SSL Status — always show the card; grey-out while loading / on error */}
+      {(sslInfo || sslError) && (
         <Card className={cn(
           "border-l-4",
-          sslInfo.status === "valid" && "border-l-green-500",
-          sslInfo.status === "expiring_soon" && "border-l-yellow-500",
-          sslInfo.status === "expired" && "border-l-red-500",
-          sslInfo.status === "no_cert" && "border-l-gray-300",
+          sslError && "border-l-gray-200",
+          sslInfo?.status === "valid" && "border-l-green-500",
+          sslInfo?.status === "expiring_soon" && "border-l-yellow-500",
+          sslInfo?.status === "expired" && "border-l-red-500",
+          sslInfo?.status === "no_cert" && "border-l-gray-300",
         )}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              {sslInfo.status === "valid" && <ShieldCheck className="h-4 w-4 text-green-600" />}
-              {sslInfo.status === "expiring_soon" && <ShieldAlert className="h-4 w-4 text-yellow-600" />}
-              {sslInfo.status === "expired" && <ShieldX className="h-4 w-4 text-red-600" />}
-              {sslInfo.status === "no_cert" && <ShieldX className="h-4 w-4 text-muted-foreground" />}
+              {sslInfo?.status === "valid" && <ShieldCheck className="h-4 w-4 text-green-600" />}
+              {sslInfo?.status === "expiring_soon" && <ShieldAlert className="h-4 w-4 text-yellow-600" />}
+              {(sslInfo?.status === "expired" || sslInfo?.status === "no_cert") && <ShieldX className="h-4 w-4 text-muted-foreground" />}
+              {(sslError || !sslInfo) && <ShieldX className="h-4 w-4 text-muted-foreground" />}
               SSL Certificate
             </CardTitle>
-            {canWrite && sslInfo.status !== "no_cert" && (
+            {canWrite && sslInfo && sslInfo.status !== "no_cert" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -470,40 +473,49 @@ export default function SiteDetailPage({
             )}
           </CardHeader>
           <CardContent className="flex items-center gap-6 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">Status</p>
-              <p className={cn(
-                "font-semibold capitalize",
-                sslInfo.status === "valid" && "text-green-700",
-                sslInfo.status === "expiring_soon" && "text-yellow-700",
-                sslInfo.status === "expired" && "text-red-700",
-              )}>
-                {sslInfo.status.replace("_", " ")}
+            {sslError && (
+              <p className="text-sm text-muted-foreground">
+                Could not reach server to check certificate. Will retry automatically.
               </p>
-            </div>
-            {sslInfo.expires_at && sslInfo.status !== "no_cert" && (
+            )}
+            {sslInfo && (
               <>
                 <div>
-                  <p className="text-xs text-muted-foreground">Expires</p>
-                  <p className="font-medium">
-                    {format(new Date(sslInfo.expires_at), "dd MMM yyyy")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Days left</p>
+                  <p className="text-xs text-muted-foreground">Status</p>
                   <p className={cn(
-                    "font-bold",
-                    sslInfo.days_left <= 14 && "text-red-600",
-                    sslInfo.days_left > 14 && sslInfo.days_left <= 30 && "text-yellow-600",
-                    sslInfo.days_left > 30 && "text-green-700",
+                    "font-semibold capitalize",
+                    sslInfo.status === "valid" && "text-green-700",
+                    sslInfo.status === "expiring_soon" && "text-yellow-700",
+                    sslInfo.status === "expired" && "text-red-700",
                   )}>
-                    {sslInfo.days_left}
+                    {sslInfo.status.replace(/_/g, " ")}
                   </p>
                 </div>
+                {sslInfo.expires_at && sslInfo.status !== "no_cert" && (
+                  <>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Expires</p>
+                      <p className="font-medium">
+                        {format(new Date(sslInfo.expires_at), "dd MMM yyyy")}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Days left</p>
+                      <p className={cn(
+                        "font-bold",
+                        sslInfo.days_left <= 14 && "text-red-600",
+                        sslInfo.days_left > 14 && sslInfo.days_left <= 30 && "text-yellow-600",
+                        sslInfo.days_left > 30 && "text-green-700",
+                      )}>
+                        {sslInfo.days_left}
+                      </p>
+                    </div>
+                  </>
+                )}
+                {sslInfo.status === "no_cert" && (
+                  <p className="text-muted-foreground">No certificate found on this server.</p>
+                )}
               </>
-            )}
-            {sslInfo.status === "no_cert" && (
-              <p className="text-muted-foreground">No certificate found on this server.</p>
             )}
           </CardContent>
         </Card>
