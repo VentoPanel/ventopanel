@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { type Site, type SiteInput, type SiteTemplate, fetchTemplates } from "@/lib/api";
 import { useServers } from "@/hooks/use-servers";
@@ -308,6 +309,16 @@ export function SiteForm({ open, onOpenChange, site }: SiteFormProps) {
               </p>
             </div>
           </div>
+
+          {selectedTemplate && !form.repository_url.trim() && (
+            <div className="flex items-start gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2.5 text-sm text-yellow-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
+              <p>
+                Template <strong>{selectedTemplate.name}</strong> requires a Repository URL to work.
+                Without it the site will be deployed as a static placeholder instead.
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button

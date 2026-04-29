@@ -33,6 +33,8 @@ import {
   WifiOff,
   Undo2,
   GitBranch,
+  Layers,
+  AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -238,11 +240,12 @@ export default function SiteDetailPage({
   }, [showContainerLogs, stopStream]);
 
   const hasRepo = Boolean(site?.RepositoryURL?.trim());
+  const hasTemplate = Boolean(site?.TemplateID?.trim());
 
   const { data: containerInfo, refetch: refetchContainer } = useQuery<ContainerInfo>({
     queryKey: ["container", id],
     queryFn: () => fetchContainerInfo(id),
-    enabled: hasRepo,
+    enabled: Boolean(site),
     refetchInterval: 20_000,
     refetchIntervalInBackground: false,
     retry: false,
@@ -525,6 +528,19 @@ export default function SiteDetailPage({
           </Card>
           <Card>
             <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Layers className="h-3.5 w-3.5" />
+                Template
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm font-medium">
+              {site.TemplateID
+                ? <span className="capitalize">{site.TemplateID}</span>
+                : <span className="text-muted-foreground">Auto-detect</span>}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm text-muted-foreground">
                 Created
               </CardTitle>
@@ -781,29 +797,30 @@ export default function SiteDetailPage({
         </Card>
       )}
 
-      {/* Container status — only for git-deployed sites */}
-      {hasRepo && (
-        <Card>
+      {/* Container status — always visible */}
+      <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
               <Container className="h-4 w-4 text-muted-foreground" />
               Docker Container
             </CardTitle>
             <div className="flex items-center gap-2">
+              {hasRepo && (
                 <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-muted-foreground"
-                onClick={() => {
-                  const next = !showContainerLogs;
-                  setShowContainerLogs(next);
-                  if (next) startStream();
-                }}
-              >
-                <Terminal className="mr-1.5 h-3.5 w-3.5" />
-                {showContainerLogs ? "Hide Logs" : "Live Logs"}
-              </Button>
-              {canWrite && (
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground"
+                  onClick={() => {
+                    const next = !showContainerLogs;
+                    setShowContainerLogs(next);
+                    if (next) startStream();
+                  }}
+                >
+                  <Terminal className="mr-1.5 h-3.5 w-3.5" />
+                  {showContainerLogs ? "Hide Logs" : "Live Logs"}
+                </Button>
+              )}
+              {canWrite && hasRepo && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -817,10 +834,23 @@ export default function SiteDetailPage({
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {!containerInfo ? (
+            {!hasRepo && hasTemplate ? (
+              <div className="flex items-start gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2.5 text-sm text-yellow-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
+                <div>
+                  <p className="font-medium">Repository URL required</p>
+                  <p className="text-xs text-yellow-700 mt-0.5">
+                    Template <strong>{site?.TemplateID}</strong> selected but no repository was provided.
+                    Edit the site, add a Repository URL, then click Deploy.
+                  </p>
+                </div>
+              </div>
+            ) : !hasRepo ? (
+              <p className="text-sm text-muted-foreground">Static site — no Docker container.</p>
+            ) : !containerInfo ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : containerInfo.status === "no_container" ? (
-              <p className="text-sm text-muted-foreground">Static site — no container.</p>
+              <p className="text-sm text-muted-foreground">Container not found — deploy to create it.</p>
             ) : (
               <div className="flex flex-wrap items-center gap-6 text-sm">
                 <div>
@@ -896,7 +926,6 @@ export default function SiteDetailPage({
             )}
           </CardContent>
         </Card>
-      )}
 
       {/* Uptime Monitoring */}
       <Card>
