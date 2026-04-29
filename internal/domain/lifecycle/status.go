@@ -59,6 +59,7 @@ var siteTransitions = map[string]map[string]bool{
 	"ssl_pending": {
 		"ssl_pending": true,
 		"deployed":    true,
+		"deploying":   true, // allow re-deploy from ssl_pending
 	},
 	"deployed": {
 		"deployed":    true,
