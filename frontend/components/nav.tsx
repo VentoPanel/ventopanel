@@ -6,11 +6,12 @@ import { useTheme } from "next-themes";
 import {
   LayoutDashboard, Server, Globe, LogOut,
   ClipboardList, Settings, Users, Activity, DatabaseBackup, BarChart2, Layers, ShieldCheck, HardDrive, TerminalSquare,
-  Sun, Moon, MonitorDot,
+  Sun, Moon, MonitorDot, Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { openCommandPalette } from "@/components/command-palette";
 
 const links = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -49,6 +50,16 @@ export function Nav() {
         </h1>
         <p className="text-xs text-muted-foreground">Control Panel</p>
       </div>
+
+      {/* Search button */}
+      <button
+        onClick={openCommandPalette}
+        className="mb-3 flex w-full items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      >
+        <Search className="h-3.5 w-3.5 shrink-0" />
+        <span className="flex-1 text-left">Search…</span>
+        <kbd className="hidden rounded border bg-background px-1 py-0.5 text-[10px] font-mono sm:inline">⌘K</kbd>
+      </button>
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
         {links.map(({ href, label, icon: Icon }) => (
