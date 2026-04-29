@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { SiteForm } from "@/components/site-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -53,7 +54,7 @@ export function SitesTable() {
   const [deleteTarget, setDeleteTarget] = useState<Site | undefined>();
 
   if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading sites…</p>;
+    return <TableSkeleton cols={5} headers={["Name", "Domain", "Server", "Status", ""]} />;
   if (isError)
     return <p className="text-sm text-destructive">Failed to load sites.</p>;
   if (!sites?.length)

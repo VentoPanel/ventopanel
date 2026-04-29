@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -218,7 +219,17 @@ export default function UsersPage() {
         </CardHeader>
         <CardContent className="p-0">
           {isLoading && (
-            <p className="px-4 py-6 text-sm text-muted-foreground">Loading…</p>
+            <ul className="divide-y">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <li key={i} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                  <Skeleton className="h-6 w-16 rounded-full" />
+                </li>
+              ))}
+            </ul>
           )}
           {!isLoading && users.length === 0 && (
             <p className="px-4 py-6 text-sm text-muted-foreground">No users found.</p>

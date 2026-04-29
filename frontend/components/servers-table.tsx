@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { ServerForm } from "@/components/server-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -55,7 +56,7 @@ export function ServersTable() {
   const [deleteTarget, setDeleteTarget] = useState<Server | undefined>();
 
   if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading servers…</p>;
+    return <TableSkeleton cols={5} headers={["Name", "Host", "Provider", "Status", ""]} />;
   if (isError)
     return <p className="text-sm text-destructive">Failed to load servers.</p>;
   if (!servers?.length)

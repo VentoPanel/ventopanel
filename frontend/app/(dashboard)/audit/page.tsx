@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { cn } from "@/lib/utils";
 
 type ResourceType = "" | "server" | "site";
@@ -92,6 +93,9 @@ export default function AuditPage() {
         </div>
       </div>
 
+      {isLoading ? (
+        <TableSkeleton cols={6} rows={8} headers={["Time", "Resource", "ID", "From", "To", "Reason"]} />
+      ) : (
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -105,14 +109,7 @@ export default function AuditPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading && (
-              <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                  Loading…
-                </TableCell>
-              </TableRow>
-            )}
-            {!isLoading && events.length === 0 && (
+            {events.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   No events found
@@ -160,6 +157,7 @@ export default function AuditPage() {
           </TableBody>
         </Table>
       </div>
+      )} {/* end isLoading ternary */}
 
       {hasNextPage && (
         <div className="flex justify-center">

@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshIndicator } from "@/components/refresh-indicator";
 import { OnboardingWizard, isOnboardingDone, markOnboardingDone } from "@/components/onboarding-wizard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -55,6 +56,7 @@ function StatCard({
   sub,
   subColor,
   href,
+  loading,
 }: {
   title: string;
   value: number | string;
@@ -62,6 +64,7 @@ function StatCard({
   sub?: string;
   subColor?: string;
   href?: string;
+  loading?: boolean;
 }) {
   const content = (
     <Card className={cn("transition-shadow", href && "hover:shadow-md cursor-pointer")}>
@@ -72,11 +75,20 @@ function StatCard({
         <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-3xl font-bold">{value}</div>
-        {sub && (
-          <p className={cn("mt-1 text-xs", subColor ?? "text-muted-foreground")}>
-            {sub}
-          </p>
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-16" />
+            <Skeleton className="h-3 w-28" />
+          </div>
+        ) : (
+          <>
+            <div className="text-3xl font-bold">{value}</div>
+            {sub && (
+              <p className={cn("mt-1 text-xs", subColor ?? "text-muted-foreground")}>
+                {sub}
+              </p>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -149,8 +161,9 @@ export default function DashboardPage() {
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
+          loading={!servers}
           title="Servers"
-          value={totalServers === 0 && !servers ? "—" : totalServers}
+          value={totalServers}
           icon={Server}
           sub={
             errorServers > 0
@@ -161,8 +174,9 @@ export default function DashboardPage() {
           href="/servers"
         />
         <StatCard
+          loading={!sites}
           title="Sites"
-          value={totalSites === 0 && !sites ? "—" : totalSites}
+          value={totalSites}
           icon={Globe}
           sub={
             errorSites > 0
@@ -173,6 +187,7 @@ export default function DashboardPage() {
           href="/sites"
         />
         <StatCard
+          loading={!recentAudit}
           title="Recent Errors"
           value={recentErrors}
           icon={recentErrors > 0 ? AlertTriangle : CheckCircle2}
@@ -199,7 +214,21 @@ export default function DashboardPage() {
           </Button>
         </div>
 
-        {recentEvents.length === 0 ? (
+        {!recentAudit ? (
+          <Card>
+            <CardContent className="p-0">
+              <ul className="divide-y">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <li key={i} className="flex items-center gap-4 px-4 py-3">
+                    <Skeleton className="h-5 w-14 rounded-full" />
+                    <Skeleton className="h-4 flex-1 max-w-xs" />
+                    <Skeleton className="h-3 w-20 shrink-0" />
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ) : recentEvents.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               No events yet.
