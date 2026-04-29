@@ -4,7 +4,7 @@ import { useState } from "react";
 import { DatabaseBackup, Download, RefreshCw, Play } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchBackups, triggerBackup, backupDownloadUrl, type BackupMeta } from "@/lib/api";
+import { fetchBackups, triggerBackup, downloadBackup, type BackupMeta } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -41,13 +41,9 @@ export default function BackupsPage() {
   async function handleDownload(name: string) {
     setDownloading(name);
     try {
-      const url = backupDownloadUrl(name);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      await downloadBackup(name);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Download failed");
     } finally {
       setDownloading(null);
     }

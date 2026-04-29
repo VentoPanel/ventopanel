@@ -507,6 +507,22 @@ export async function triggerBackup(): Promise<void> {
   await apiFetch("/backups/trigger", { method: "POST" });
 }
 
-export function backupDownloadUrl(name: string): string {
-  return `/api/v1/backups/${encodeURIComponent(name)}/download`;
+export async function downloadBackup(name: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`/api/v1/backups/${encodeURIComponent(name)}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: "download failed" }));
+    throw new Error(body?.error ?? "download failed");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
