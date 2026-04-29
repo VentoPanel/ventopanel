@@ -11,6 +11,15 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchServers, getToken, type Server } from "@/lib/api";
+
+// Derives HTTP base URL from the WS env var or falls back to the API base var.
+function getApiBaseUrl(): string {
+  const ws = process.env.NEXT_PUBLIC_API_WS_URL;
+  if (ws) return ws.replace(/^ws(s?):\/\//, "http$1://").replace(/\/$/, "");
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (base) return base.replace(/\/$/, "");
+  return "";  // empty → use relative URL (Next.js proxy)
+}
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -137,6 +146,7 @@ export default function MonitorPage() {
   const [history, setHistory]   = useState<ChartPoint[]>([]);
   const [latest,  setLatest]    = useState<ChartPoint | null>(null);
   const [status,  setStatus]    = useState<"idle" | "connecting" | "live" | "error">("idle");
+  const [errMsg,  setErrMsg]    = useState("");
   const esRef = useRef<EventSource | null>(null);
 
   const { data: servers, isLoading: serversLoading } = useQuery({
@@ -151,21 +161,39 @@ export default function MonitorPage() {
     setStatus("idle");
   }, []);
 
-  const start = useCallback((sid: string) => {
+  const start = useCallback(async (sid: string) => {
     stop();
     if (!sid) return;
     setHistory([]);
     setLatest(null);
+    setErrMsg("");
     setStatus("connecting");
 
-    const token = getToken();
-    const url = `/api/v1/servers/${sid}/metrics/stream` + (token ? `?token=${encodeURIComponent(token)}` : "");
-    const es = new EventSource(url);
+    const token = getToken() ?? "";
+    const apiBase = getApiBaseUrl();
+    const sseUrl = `${apiBase}/api/v1/servers/${sid}/metrics/stream?token=${encodeURIComponent(token)}`;
+
+    // Preflight: try a regular fetch first to get a human-readable error if SSH fails.
+    try {
+      const preflight = await fetch(sseUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!preflight.ok) {
+        const body = await preflight.json().catch(() => ({ error: `HTTP ${preflight.status}` }));
+        setErrMsg(body?.error ?? `HTTP ${preflight.status}`);
+        setStatus("error");
+        return;
+      }
+    } catch {
+      // Network error — fall through to EventSource which may give a better picture.
+    }
+
+    const es = new EventSource(sseUrl);
     esRef.current = es;
 
     es.addEventListener("metrics", (e) => {
       try {
-        const snap: Snapshot = JSON.parse(e.data);
+        const snap: Snapshot = JSON.parse((e as MessageEvent).data);
         const pt = toPoint(snap);
         setLatest(pt);
         setHistory((prev) => {
@@ -176,13 +204,15 @@ export default function MonitorPage() {
       } catch { /* ignore parse errors */ }
     });
 
-    es.addEventListener("error", () => {
+    es.addEventListener("error", (e) => {
+      const msg = (e as MessageEvent).data;
+      if (msg) setErrMsg(msg);
       setStatus("error");
       es.close();
     });
 
     es.onerror = () => {
-      setStatus("error");
+      setStatus((prev) => prev === "live" ? "error" : prev === "connecting" ? "error" : prev);
       es.close();
     };
   }, [stop]);
@@ -249,9 +279,22 @@ export default function MonitorPage() {
 
       {/* ── Error ── */}
       {serverId && status === "error" && (
-        <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <WifiOff className="h-4 w-4 shrink-0" />
-          Could not connect to server metrics stream. Check SSH credentials and server availability.
+        <div className="flex flex-col gap-1 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="flex items-center gap-2">
+            <WifiOff className="h-4 w-4 shrink-0" />
+            <span className="font-medium">Could not connect to metrics stream</span>
+          </div>
+          {errMsg ? (
+            <p className="ml-6 text-xs opacity-80">{errMsg}</p>
+          ) : (
+            <p className="ml-6 text-xs opacity-80">Check SSH credentials and server availability. Make sure port 22 is open.</p>
+          )}
+          <button
+            onClick={() => start(serverId)}
+            className="ml-6 mt-1 w-fit text-xs underline underline-offset-2 hover:opacity-70"
+          >
+            Retry
+          </button>
         </div>
       )}
 

@@ -75,6 +75,11 @@ services:
       # Example: NEXT_PUBLIC_API_WS_URL=wss://panel.example.com (if Nginx proxies WebSocket)
       # Default: ws://<same host>:8080  (direct to API port, works when port 8080 is exposed)
       NEXT_PUBLIC_API_WS_URL: ${NEXT_PUBLIC_API_WS_URL:-}
+      # NEXT_PUBLIC_API_BASE_URL is the HTTP base the *browser* uses to reach the Go API directly
+      # for SSE endpoints (Resource Monitor, Log Viewer). Must match host/port accessible from the browser.
+      # Example: NEXT_PUBLIC_API_BASE_URL=https://panel.example.com (if Nginx proxies /api)
+      # Default: http://<same host>:8080
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
     depends_on:
       - api
 
