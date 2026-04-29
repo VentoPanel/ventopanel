@@ -760,17 +760,22 @@ export async function setupTOTP(): Promise<TOTPSetup> {
 }
 
 export async function enableTOTP(code: string): Promise<void> {
-  await apiFetch("/auth/totp/enable", {
+  const res: { token?: string } = await apiFetch("/auth/totp/enable", {
     method: "POST",
     body: JSON.stringify({ code }),
   });
+  // Backend returns a refreshed JWT with totp_enabled=true — save it immediately
+  // so the next page load reads the correct 2FA status from the token payload.
+  if (res.token) setToken(res.token);
 }
 
 export async function disableTOTP(code: string): Promise<void> {
-  await apiFetch("/auth/totp/disable", {
+  const res: { token?: string } = await apiFetch("/auth/totp/disable", {
     method: "POST",
     body: JSON.stringify({ code }),
   });
+  // Backend returns a refreshed JWT with totp_enabled=false.
+  if (res.token) setToken(res.token);
 }
 
 export async function verifyMFA(mfa_session: string, code: string): Promise<{ token: string; email: string; role: string }> {

@@ -101,6 +101,7 @@ func (h *AuthHandler) TOTPSetup(c *gin.Context) {
 }
 
 // TOTPEnable handles POST /auth/totp/enable — verifies the first code and activates 2FA.
+// Returns a refreshed JWT so the client's token immediately reflects totp_enabled=true.
 func (h *AuthHandler) TOTPEnable(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
@@ -117,10 +118,16 @@ func (h *AuthHandler) TOTPEnable(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "2FA enabled"})
+	token, err := h.service.IssueTokenForUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "2FA enabled", "token": token})
 }
 
 // TOTPDisable handles POST /auth/totp/disable — verifies the code and disables 2FA.
+// Returns a refreshed JWT so the client's token immediately reflects totp_enabled=false.
 func (h *AuthHandler) TOTPDisable(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
@@ -137,7 +144,12 @@ func (h *AuthHandler) TOTPDisable(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "2FA disabled"})
+	token, err := h.service.IssueTokenForUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "2FA disabled", "token": token})
 }
 
 // Register creates a new user account.

@@ -218,6 +218,16 @@ func (s *Service) parseMFASession(tokenStr string) (jwt.MapClaims, error) {
 	return claims, nil
 }
 
+// IssueTokenForUser loads the user by ID and issues a fresh JWT with current state.
+// Used by handlers that change auth-related user fields (2FA) to refresh the client's token.
+func (s *Service) IssueTokenForUser(ctx context.Context, userID string) (string, error) {
+	u, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	return s.issueToken(u)
+}
+
 func (s *Service) issueToken(u *domain.User) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
