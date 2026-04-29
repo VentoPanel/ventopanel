@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -18,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshIndicator } from "@/components/refresh-indicator";
+import { OnboardingWizard, isOnboardingDone, markOnboardingDone } from "@/components/onboarding-wizard";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -87,6 +89,19 @@ export default function DashboardPage() {
 
   const { data: servers, isFetching: serversFetching, dataUpdatedAt: serversUpdatedAt } = useServers();
   const { data: sites, isFetching: sitesFetching, dataUpdatedAt: sitesUpdatedAt } = useSites();
+
+  // Show onboarding wizard if never completed AND no servers exist yet.
+  const [showWizard, setShowWizard] = useState(false);
+  useEffect(() => {
+    if (!isOnboardingDone() && servers !== undefined && servers.length === 0) {
+      setShowWizard(true);
+    }
+  }, [servers]);
+  const handleWizardDone = () => {
+    markOnboardingDone();
+    setShowWizard(false);
+    qc.invalidateQueries({ queryKey: ["servers"] });
+  };
   const { data: recentAudit, isFetching: auditFetching } = useRecentAudit(8);
 
   const totalServers = servers?.length ?? 0;
@@ -110,6 +125,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Onboarding wizard */}
+      {showWizard && <OnboardingWizard onDone={handleWizardDone} />}
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
