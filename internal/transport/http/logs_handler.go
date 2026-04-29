@@ -12,6 +12,13 @@ import (
 	"github.com/your-org/ventopanel/internal/filemanager"
 )
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// logShellescape wraps s in single quotes, escaping any existing single quotes.
+func logShellescape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 type LogsHandler struct {
@@ -54,16 +61,16 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		}
 		cmd = fmt.Sprintf(
 			"journalctl -u %s -n %s -f --no-pager --output=short-iso 2>&1",
-			shellescape(unit), shellescape(lines),
+			logShellescape(unit), logShellescape(lines),
 		)
 	case "docker":
 		if container == "" {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "container param required"})
 			return
 		}
-		cmd = fmt.Sprintf("docker logs -f --tail %s %s 2>&1", shellescape(lines), shellescape(container))
+		cmd = fmt.Sprintf("docker logs -f --tail %s %s 2>&1", logShellescape(lines), logShellescape(container))
 	case "file":
-		cmd = fmt.Sprintf("tail -n %s -f %s 2>&1", shellescape(lines), shellescape(filePath))
+		cmd = fmt.Sprintf("tail -n %s -f %s 2>&1", logShellescape(lines), logShellescape(filePath))
 	default:
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid source (journal|docker|file)"})
 		return
