@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, Send, MessageSquare, Save, Eye, EyeOff, Activity } from "lucide-react";
+import { Settings, Send, MessageSquare, Save, Eye, EyeOff, Activity, Rocket } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchNotificationSettings,
@@ -63,6 +63,8 @@ export default function SettingsPage() {
     uptime_notify_recovery: true,
     uptime_fail_threshold: 1,
     uptime_recovery_threshold: 1,
+    deploy_notify_success: false,
+    deploy_notify_failure: true,
   });
 
   useEffect(() => {
@@ -79,6 +81,8 @@ export default function SettingsPage() {
         typeof data.uptime_recovery_threshold === "number"
           ? data.uptime_recovery_threshold
           : 1,
+      deploy_notify_success: data.deploy_notify_success ?? false,
+      deploy_notify_failure: data.deploy_notify_failure ?? true,
     });
   }, [data]);
 
@@ -274,6 +278,53 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Deploy Notifications */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Rocket className="h-4 w-4" />
+              Deploy alerts
+            </CardTitle>
+            <CardDescription>
+              Get notified via Telegram / WhatsApp when a site deploy finishes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-input"
+                checked={form.deploy_notify_failure}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, deploy_notify_failure: e.target.checked }))
+                }
+              />
+              <span>
+                <span className="font-medium">Notify on deploy failure</span>
+                <span className="block text-xs text-muted-foreground">
+                  Receive an alert whenever a deploy step or docker build fails. Enabled by default.
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-input"
+                checked={form.deploy_notify_success}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, deploy_notify_success: e.target.checked }))
+                }
+              />
+              <span>
+                <span className="font-medium">Notify on deploy success</span>
+                <span className="block text-xs text-muted-foreground">
+                  Receive a confirmation message every time a deploy completes successfully.
+                </span>
+              </span>
+            </label>
           </CardContent>
         </Card>
 

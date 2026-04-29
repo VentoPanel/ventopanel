@@ -3,13 +3,15 @@ package settings
 import "context"
 
 const (
-	KeyTelegramBotToken   = "telegram_bot_token"
-	KeyTelegramChatID     = "telegram_chat_id"
-	KeyWhatsAppWebhookURL = "whatsapp_webhook_url"
-	KeyUptimeNotifyDown   = "uptime_notify_down"
-	KeyUptimeNotifyRecovery = "uptime_notify_recovery"
-	KeyUptimeFailThreshold = "uptime_fail_threshold"
+	KeyTelegramBotToken        = "telegram_bot_token"
+	KeyTelegramChatID          = "telegram_chat_id"
+	KeyWhatsAppWebhookURL      = "whatsapp_webhook_url"
+	KeyUptimeNotifyDown        = "uptime_notify_down"
+	KeyUptimeNotifyRecovery    = "uptime_notify_recovery"
+	KeyUptimeFailThreshold     = "uptime_fail_threshold"
 	KeyUptimeRecoveryThreshold = "uptime_recovery_threshold"
+	KeyDeployNotifySuccess     = "deploy_notify_success"
+	KeyDeployNotifyFailure     = "deploy_notify_failure"
 )
 
 // NotificationConfig holds all notification credentials.
@@ -19,10 +21,13 @@ type NotificationConfig struct {
 	WhatsAppWebhookURL string
 	// Uptime alerts — Telegram/WhatsApp payload respects NotifyDown / NotifyRecovery
 	// and consecutive thresholds (anti-flapping).
-	UptimeNotifyDown          bool
-	UptimeNotifyRecovery      bool
-	UptimeFailThreshold       int // consecutive failed checks before DOWN alert (≥1)
-	UptimeRecoveryThreshold   int // consecutive OK checks before RECOVERY alert (≥1)
+	UptimeNotifyDown        bool
+	UptimeNotifyRecovery    bool
+	UptimeFailThreshold     int // consecutive failed checks before DOWN alert (≥1)
+	UptimeRecoveryThreshold int // consecutive OK checks before RECOVERY alert (≥1)
+	// Deploy alerts
+	DeployNotifySuccess bool
+	DeployNotifyFailure bool
 }
 
 // Repository persists and retrieves application settings.

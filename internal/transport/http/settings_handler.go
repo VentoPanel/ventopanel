@@ -18,23 +18,27 @@ func NewSettingsHandler(repo settingsdomain.Repository) *SettingsHandler {
 }
 
 type notificationSettingsRequest struct {
-	TelegramBotToken           string `json:"telegram_bot_token"`
-	TelegramChatID             string `json:"telegram_chat_id"`
-	WhatsAppWebhookURL         string `json:"whatsapp_webhook_url"`
-	UptimeNotifyDown           *bool  `json:"uptime_notify_down"`
-	UptimeNotifyRecovery       *bool  `json:"uptime_notify_recovery"`
-	UptimeFailThreshold        *int   `json:"uptime_fail_threshold"`
-	UptimeRecoveryThreshold    *int   `json:"uptime_recovery_threshold"`
+	TelegramBotToken        string `json:"telegram_bot_token"`
+	TelegramChatID          string `json:"telegram_chat_id"`
+	WhatsAppWebhookURL      string `json:"whatsapp_webhook_url"`
+	UptimeNotifyDown        *bool  `json:"uptime_notify_down"`
+	UptimeNotifyRecovery    *bool  `json:"uptime_notify_recovery"`
+	UptimeFailThreshold     *int   `json:"uptime_fail_threshold"`
+	UptimeRecoveryThreshold *int   `json:"uptime_recovery_threshold"`
+	DeployNotifySuccess     *bool  `json:"deploy_notify_success"`
+	DeployNotifyFailure     *bool  `json:"deploy_notify_failure"`
 }
 
 type notificationSettingsResponse struct {
-	TelegramBotToken           string `json:"telegram_bot_token"`
-	TelegramChatID             string `json:"telegram_chat_id"`
-	WhatsAppWebhookURL         string `json:"whatsapp_webhook_url"`
-	UptimeNotifyDown           bool   `json:"uptime_notify_down"`
-	UptimeNotifyRecovery       bool   `json:"uptime_notify_recovery"`
-	UptimeFailThreshold        int    `json:"uptime_fail_threshold"`
-	UptimeRecoveryThreshold    int    `json:"uptime_recovery_threshold"`
+	TelegramBotToken        string `json:"telegram_bot_token"`
+	TelegramChatID          string `json:"telegram_chat_id"`
+	WhatsAppWebhookURL      string `json:"whatsapp_webhook_url"`
+	UptimeNotifyDown        bool   `json:"uptime_notify_down"`
+	UptimeNotifyRecovery    bool   `json:"uptime_notify_recovery"`
+	UptimeFailThreshold     int    `json:"uptime_fail_threshold"`
+	UptimeRecoveryThreshold int    `json:"uptime_recovery_threshold"`
+	DeployNotifySuccess     bool   `json:"deploy_notify_success"`
+	DeployNotifyFailure     bool   `json:"deploy_notify_failure"`
 }
 
 func (h *SettingsHandler) requireAdmin(c *gin.Context) bool {
@@ -71,6 +75,8 @@ func (h *SettingsHandler) GetNotifications(c *gin.Context) {
 		UptimeNotifyRecovery:    cfg.UptimeNotifyRecovery,
 		UptimeFailThreshold:     cfg.UptimeFailThreshold,
 		UptimeRecoveryThreshold: cfg.UptimeRecoveryThreshold,
+		DeployNotifySuccess:     cfg.DeployNotifySuccess,
+		DeployNotifyFailure:     cfg.DeployNotifyFailure,
 	}
 	if cfg.TelegramBotToken != "" {
 		resp.TelegramBotToken = "••••" + cfg.TelegramBotToken[max(0, len(cfg.TelegramBotToken)-4):]
@@ -108,6 +114,8 @@ func (h *SettingsHandler) UpdateNotifications(c *gin.Context) {
 		UptimeNotifyRecovery:    existing.UptimeNotifyRecovery,
 		UptimeFailThreshold:     existing.UptimeFailThreshold,
 		UptimeRecoveryThreshold: existing.UptimeRecoveryThreshold,
+		DeployNotifySuccess:     existing.DeployNotifySuccess,
+		DeployNotifyFailure:     existing.DeployNotifyFailure,
 	}
 	if req.UptimeNotifyDown != nil {
 		cfg.UptimeNotifyDown = *req.UptimeNotifyDown
@@ -120,6 +128,12 @@ func (h *SettingsHandler) UpdateNotifications(c *gin.Context) {
 	}
 	if req.UptimeRecoveryThreshold != nil {
 		cfg.UptimeRecoveryThreshold = settingsdomain.ClampInt(*req.UptimeRecoveryThreshold, 1, 60)
+	}
+	if req.DeployNotifySuccess != nil {
+		cfg.DeployNotifySuccess = *req.DeployNotifySuccess
+	}
+	if req.DeployNotifyFailure != nil {
+		cfg.DeployNotifyFailure = *req.DeployNotifyFailure
 	}
 	if err := h.repo.SetNotificationConfig(c.Request.Context(), cfg); err != nil {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})

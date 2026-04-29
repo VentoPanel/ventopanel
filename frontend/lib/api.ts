@@ -132,6 +132,14 @@ export interface DeployLogEntry {
   duration_ms?: number;
 }
 
+export interface GitCommit {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  timestamp: string;
+}
+
 async function apiFetch<T>(
   path: string,
   options?: RequestInit,
@@ -354,6 +362,8 @@ export interface NotificationSettings {
   uptime_notify_recovery: boolean;
   uptime_fail_threshold: number;
   uptime_recovery_threshold: number;
+  deploy_notify_success: boolean;
+  deploy_notify_failure: boolean;
 }
 
 export async function fetchNotificationSettings(): Promise<NotificationSettings> {
@@ -620,6 +630,18 @@ export async function fetchDeployTrend(): Promise<DeployTrendPoint[]> {
 export async function fetchDeployHistory(siteID: string, limit = 20): Promise<DeployLogEntry[]> {
   const data = await apiFetch<{ items: DeployLogEntry[] }>(`/sites/${siteID}/deploys?limit=${limit}`);
   return data.items ?? [];
+}
+
+export async function fetchCommits(siteID: string): Promise<GitCommit[]> {
+  const data = await apiFetch<{ items: GitCommit[] }>(`/sites/${siteID}/commits`);
+  return data.items ?? [];
+}
+
+export async function rollbackToCommit(siteID: string, commit: string): Promise<void> {
+  await apiFetch(`/sites/${siteID}/rollback`, {
+    method: "POST",
+    body: JSON.stringify({ commit }),
+  });
 }
 
 // ── Log Streaming (SSE) ───────────────────────────────────────────────────────

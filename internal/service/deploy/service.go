@@ -15,6 +15,7 @@ import (
 	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	domain "github.com/your-org/ventopanel/internal/domain/deploy"
 	"github.com/your-org/ventopanel/internal/domain/lifecycle"
+	settingsdomain "github.com/your-org/ventopanel/internal/domain/settings"
 	tmplcatalog "github.com/your-org/ventopanel/internal/domain/template"
 	"github.com/your-org/ventopanel/internal/domain/tasklog"
 	"github.com/your-org/ventopanel/internal/infra/lock"
@@ -43,6 +44,16 @@ type Service struct {
 	audit      auditdomain.StatusEventWriter
 	taskLogs   tasklog.Repository
 	envRepo    *pgrepo.EnvRepository
+	notifier   deployNotifier
+	settings   deploySettings
+}
+
+type deployNotifier interface {
+	NotifyAll(ctx context.Context, message string) error
+}
+
+type deploySettings interface {
+	GetNotificationConfig(ctx context.Context) (settingsdomain.NotificationConfig, error)
 }
 
 type sslQueue interface {
@@ -52,6 +63,15 @@ type sslQueue interface {
 type lockManager interface {
 	Acquire(ctx context.Context, key string, ttl time.Duration) error
 	Release(ctx context.Context, key string) error
+}
+
+// GitCommit holds a single git commit entry from the remote repo.
+type GitCommit struct {
+	Hash      string `json:"hash"`
+	Short     string `json:"short"`
+	Subject   string `json:"subject"`
+	Author    string `json:"author"`
+	Timestamp string `json:"timestamp"`
 }
 
 type DeploySitePayload struct {
@@ -70,6 +90,8 @@ func NewService(
 	audit auditdomain.StatusEventWriter,
 	taskLogs tasklog.Repository,
 	envRepo *pgrepo.EnvRepository,
+	notifier deployNotifier,
+	settings deploySettings,
 ) *Service {
 	return &Service{
 		siteRepo:   siteRepo,
@@ -83,6 +105,8 @@ func NewService(
 		audit:      audit,
 		taskLogs:   taskLogs,
 		envRepo:    envRepo,
+		notifier:   notifier,
+		settings:   settings,
 	}
 }
 
@@ -250,6 +274,7 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 			return updateErr
 		}
 		s.writeAudit("site", site.ID, prevFailed, site.Status, "deploy_failed_runtime", TaskDeploySite)
+		s.sendDeployNotify(ctx, site.Name, false, deployErr.Error())
 		finishLog("failed", "")
 		return deployErr
 	}
@@ -287,8 +312,37 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		return err
 	}
 	s.writeAudit("site", site.ID, prevDeployed, site.Status, "deploy_success", TaskDeploySite)
+	s.sendDeployNotify(ctx, site.Name, true, "")
 	finishLog("success", "")
 	return nil
+}
+
+// sendDeployNotify fires a Telegram/WhatsApp message when deploy notifications are enabled.
+func (s *Service) sendDeployNotify(ctx context.Context, siteName string, success bool, errMsg string) {
+	if s.notifier == nil || s.settings == nil {
+		return
+	}
+	cfg, err := s.settings.GetNotificationConfig(ctx)
+	if err != nil {
+		return
+	}
+	if success && !cfg.DeployNotifySuccess {
+		return
+	}
+	if !success && !cfg.DeployNotifyFailure {
+		return
+	}
+	var msg string
+	if success {
+		msg = fmt.Sprintf("✅ Deploy succeeded: %s", siteName)
+	} else {
+		short := errMsg
+		if len(short) > 200 {
+			short = short[:200] + "…"
+		}
+		msg = fmt.Sprintf("❌ Deploy failed: %s\n%s", siteName, short)
+	}
+	_ = s.notifier.NotifyAll(ctx, msg)
 }
 
 // ServerContainer is one row from `docker ps` on the remote server.
@@ -493,6 +547,118 @@ func (s *Service) writeAudit(resourceType, resourceID, from, to, reason, taskID 
 	})
 }
 
+
+// GetCommits returns recent git commits from the deployed repo on the server.
+func (s *Service) GetCommits(ctx context.Context, siteID string) ([]GitCommit, error) {
+	site, err := s.siteRepo.GetByID(ctx, siteID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(site.RepositoryURL) == "" {
+		return nil, fmt.Errorf("site has no repository — rollback not available")
+	}
+	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
+	if err != nil {
+		return nil, err
+	}
+	appDir := fmt.Sprintf("/opt/ventopanel/sites/%s/app", siteID)
+	cmd := fmt.Sprintf(
+		`git -C "%s" log --pretty=format:"%%H|%%h|%%s|%%aI|%%an" -15 2>/dev/null || echo ""`,
+		appDir,
+	)
+	sshCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := s.ssh.RunOutput(sshCtx, *server, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+	var commits []GitCommit
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 5)
+		for len(parts) < 5 {
+			parts = append(parts, "")
+		}
+		commits = append(commits, GitCommit{
+			Hash:      parts[0],
+			Short:     parts[1],
+			Subject:   parts[2],
+			Timestamp: parts[3],
+			Author:    parts[4],
+		})
+	}
+	return commits, nil
+}
+
+// RollbackToCommit checks out a specific commit in the deployed repo and rebuilds the container.
+func (s *Service) RollbackToCommit(ctx context.Context, siteID, commitHash string) error {
+	if strings.TrimSpace(commitHash) == "" {
+		return fmt.Errorf("commit hash is required")
+	}
+	site, err := s.siteRepo.GetByID(ctx, siteID)
+	if err != nil {
+		return err
+	}
+	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
+	if err != nil {
+		return err
+	}
+
+	appDir := fmt.Sprintf("/opt/ventopanel/sites/%s/app", siteID)
+	appPort := derivePort(siteID)
+	envFlags := s.buildEnvFlags(ctx, siteID)
+
+	logEntry := &tasklog.TaskLog{SiteID: siteID, TaskType: "rollback"}
+	_ = s.taskLogs.Create(ctx, logEntry)
+
+	var output strings.Builder
+	appendLine := func(label, text string, err error) {
+		if err != nil {
+			output.WriteString(fmt.Sprintf("$ %s\nERROR: %v\n", label, err))
+		} else {
+			output.WriteString(fmt.Sprintf("$ %s\n%s\n", label, text))
+		}
+	}
+
+	// Checkout the requested commit then rebuild and restart the container.
+	checkoutCmd := fmt.Sprintf(`git -C "%s" checkout "%s" 2>&1`, appDir, commitHash)
+	out, err := s.ssh.RunOutput(ctx, *server, checkoutCmd)
+	appendLine("git_checkout", out, err)
+	if err != nil {
+		_ = s.taskLogs.Finish(ctx, logEntry.ID, "failed", output.String())
+		return fmt.Errorf("git checkout: %w", err)
+	}
+
+	buildCmd := fmt.Sprintf(`docker build -t "ventopanel_%s" "%s" 2>&1`, siteID, appDir)
+	out, err = s.ssh.RunOutput(ctx, *server, buildCmd)
+	appendLine("docker_build", out, err)
+	if err != nil {
+		_ = s.taskLogs.Finish(ctx, logEntry.ID, "failed", output.String())
+		return fmt.Errorf("docker build: %w", err)
+	}
+
+	stopCmd := fmt.Sprintf(`docker rm -f "ventopanel_%s" 2>/dev/null || true`, siteID)
+	out, _ = s.ssh.RunOutput(ctx, *server, stopCmd)
+	appendLine("docker_stop", out, nil)
+
+	runCmd := fmt.Sprintf(
+		`docker run -d --name "ventopanel_%s" --restart unless-stopped -p "%d:3000"%s "ventopanel_%s"`,
+		siteID, appPort, envFlags, siteID,
+	)
+	out, err = s.ssh.RunOutput(ctx, *server, runCmd)
+	appendLine("docker_run", out, err)
+	if err != nil {
+		_ = s.taskLogs.Finish(ctx, logEntry.ID, "failed", output.String())
+		return fmt.Errorf("docker run: %w", err)
+	}
+
+	_ = s.taskLogs.Finish(ctx, logEntry.ID, "success", output.String())
+	s.sendDeployNotify(ctx, site.Name, true, "")
+	return nil
+}
 
 // buildEnvFlags loads site env vars from the DB and returns a shell-safe
 // "-e KEY=VALUE" string for docker run. Values containing spaces or special

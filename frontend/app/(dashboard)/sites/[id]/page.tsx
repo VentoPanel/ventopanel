@@ -31,6 +31,8 @@ import {
   History,
   Wifi,
   WifiOff,
+  Undo2,
+  GitBranch,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -46,12 +48,15 @@ import {
   regenerateWebhookToken,
   fetchUptime,
   fetchDeployHistory,
+  fetchCommits,
+  rollbackToCommit,
   getLogStreamUrl,
   type SSLCertInfo,
   type ContainerInfo,
   type EnvVarItem,
   type UptimeData,
   type DeployLogEntry,
+  type GitCommit,
 } from "@/lib/api";
 import { useAuditEvents } from "@/hooks/use-audit";
 import { useDeploySite, useDeleteSite } from "@/hooks/use-site-mutations";
@@ -161,6 +166,8 @@ export default function SiteDetailPage({
   const [showContainerLogs, setShowContainerLogs] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [expandedDeploy, setExpandedDeploy] = useState<string | null>(null);
+  const [showRollback, setShowRollback] = useState(false);
+  const [rollingBack, setRollingBack] = useState<string | null>(null);
 
   // SSE streaming log state
   const [streamLines, setStreamLines] = useState<string[]>([]);
@@ -248,6 +255,29 @@ export default function SiteDetailPage({
     refetchIntervalInBackground: false,
     staleTime: 20_000,
   });
+
+  const { data: commits = [], isFetching: commitsFetching } = useQuery<GitCommit[]>({
+    queryKey: ["commits", id],
+    queryFn: () => fetchCommits(id),
+    enabled: showRollback,
+    staleTime: 30_000,
+  });
+
+  async function handleRollback(hash: string) {
+    if (rollingBack) return;
+    setRollingBack(hash);
+    try {
+      await rollbackToCommit(id, hash);
+      toast.success("Rollback started — container is rebuilding");
+      setShowRollback(false);
+      qc.invalidateQueries({ queryKey: ["deploy-history", id] });
+      qc.invalidateQueries({ queryKey: ["container", id] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Rollback failed");
+    } finally {
+      setRollingBack(null);
+    }
+  }
 
   // ENV vars state
   const [newKey, setNewKey] = useState("");
@@ -947,14 +977,66 @@ export default function SiteDetailPage({
       {/* Deploy History */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <History className="h-4 w-4" />
-            Deploy History
-            <span className="ml-auto text-xs font-normal text-muted-foreground">
-              last {deployHistory.length} runs
-            </span>
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <History className="h-4 w-4" />
+              Deploy History
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                last {deployHistory.length} runs
+              </span>
+            </CardTitle>
+            {canWrite && hasRepo && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={() => setShowRollback((v) => !v)}
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                {showRollback ? "Hide Rollback" : "Rollback"}
+              </Button>
+            )}
+          </div>
         </CardHeader>
+
+        {/* Rollback panel */}
+        {showRollback && hasRepo && (
+          <div className="mx-6 mb-4 rounded-md border bg-muted/30">
+            <div className="flex items-center gap-2 border-b px-4 py-2.5">
+              <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-sm font-medium">Select a commit to roll back to</span>
+              {commitsFetching && <RefreshCw className="ml-auto h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            </div>
+            {commits.length === 0 && !commitsFetching ? (
+              <p className="px-4 py-3 text-sm text-muted-foreground">
+                No commits found — make sure the site has been deployed at least once.
+              </p>
+            ) : (
+              <div className="divide-y">
+                {commits.map((c) => (
+                  <div key={c.hash} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <code className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{c.short}</code>
+                    <span className="flex-1 truncate">{c.subject}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground hidden sm:block">{c.author}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 shrink-0 text-xs"
+                      disabled={rollingBack === c.hash}
+                      onClick={() => handleRollback(c.hash)}
+                    >
+                      {rollingBack === c.hash ? (
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                      ) : (
+                        "Roll back"
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <CardContent className="p-0">
           {deployHistory.length === 0 ? (
             <p className="px-6 pb-4 text-sm text-muted-foreground">No deploy runs yet.</p>

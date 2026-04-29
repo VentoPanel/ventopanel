@@ -448,6 +448,40 @@ func (s *sseLineWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// GetCommits handles GET /sites/:id/commits — returns recent git commits on the server.
+func (h *SiteHandler) GetCommits(c *gin.Context) {
+	id := c.Param("id")
+	if !h.authorizeSite(c, id, false) {
+		return
+	}
+	commits, err := h.deployService.GetCommits(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": commits})
+}
+
+// Rollback handles POST /sites/:id/rollback — checks out a commit and rebuilds.
+func (h *SiteHandler) Rollback(c *gin.Context) {
+	id := c.Param("id")
+	if !h.authorizeSite(c, id, true) {
+		return
+	}
+	var req struct {
+		Commit string `json:"commit" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	if err := h.deployService.RollbackToCommit(c.Request.Context(), id, req.Commit); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // GetDeployHistory handles GET /sites/:id/deploys?limit=20
 func (h *SiteHandler) GetDeployHistory(c *gin.Context) {
 	id := c.Param("id")

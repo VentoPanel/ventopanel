@@ -58,6 +58,8 @@ func RegisterRoutes(
 		api.GET("/sites/:id/container/logs/stream", siteHandler.StreamContainerLogs)
 		api.POST("/sites/:id/container/restart", siteHandler.RestartContainer)
 		api.GET("/sites/:id/deploys", siteHandler.GetDeployHistory)
+		api.GET("/sites/:id/commits", siteHandler.GetCommits)
+		api.POST("/sites/:id/rollback", siteHandler.Rollback)
 		api.GET("/sites/:id/env", envHandler.ListEnv)
 		api.PUT("/sites/:id/env", envHandler.UpsertEnv)
 		api.DELETE("/sites/:id/env/:key", envHandler.DeleteEnv)

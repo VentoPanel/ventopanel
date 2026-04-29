@@ -116,10 +116,10 @@ func main() {
 	teamService := teamsvc.NewService(teamRepo)
 	auditService := auditsvc.NewService(statusEventRepo)
 	sslService := sslsvc.NewService(siteRepo, serverRepo, sslManager, asynqClient, lockManager, statusEventRepo).WithSSH(sshExecutor)
-	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo)
-	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	// Alert service reads config dynamically from DB on every send — no static notifiers needed.
 	alertService := alertsvc.NewService().WithSettingsRepo(settingsRepo)
+	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo, alertService, settingsRepo)
+	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService, settingsRepo)
 	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
 	dashboardRepo := postgresrepo.NewDashboardRepository(pgPool)

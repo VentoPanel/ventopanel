@@ -38,7 +38,7 @@ func (r *SettingsRepository) Set(ctx context.Context, key, value string) error {
 func (r *SettingsRepository) GetNotificationConfig(ctx context.Context) (settings.NotificationConfig, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT key, value FROM app_settings
-		 WHERE key IN ($1, $2, $3, $4, $5, $6, $7)`,
+		 WHERE key IN ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		settings.KeyTelegramBotToken,
 		settings.KeyTelegramChatID,
 		settings.KeyWhatsAppWebhookURL,
@@ -46,6 +46,8 @@ func (r *SettingsRepository) GetNotificationConfig(ctx context.Context) (setting
 		settings.KeyUptimeNotifyRecovery,
 		settings.KeyUptimeFailThreshold,
 		settings.KeyUptimeRecoveryThreshold,
+		settings.KeyDeployNotifySuccess,
+		settings.KeyDeployNotifyFailure,
 	)
 	if err != nil {
 		return settings.NotificationConfig{}, err
@@ -57,6 +59,8 @@ func (r *SettingsRepository) GetNotificationConfig(ctx context.Context) (setting
 		UptimeNotifyRecovery:    true,
 		UptimeFailThreshold:     1,
 		UptimeRecoveryThreshold: 1,
+		DeployNotifySuccess:     false,
+		DeployNotifyFailure:     true,
 	}
 	for rows.Next() {
 		var k, v string
@@ -78,6 +82,10 @@ func (r *SettingsRepository) GetNotificationConfig(ctx context.Context) (setting
 			cfg.UptimeFailThreshold = settings.ParseIntBounded(v, 1, 1, 60)
 		case settings.KeyUptimeRecoveryThreshold:
 			cfg.UptimeRecoveryThreshold = settings.ParseIntBounded(v, 1, 1, 60)
+		case settings.KeyDeployNotifySuccess:
+			cfg.DeployNotifySuccess = settings.ParseBool(v, false)
+		case settings.KeyDeployNotifyFailure:
+			cfg.DeployNotifyFailure = settings.ParseBool(v, true)
 		}
 	}
 	return cfg, rows.Err()
@@ -92,6 +100,8 @@ func (r *SettingsRepository) SetNotificationConfig(ctx context.Context, cfg sett
 		{settings.KeyUptimeNotifyRecovery, formatBool(cfg.UptimeNotifyRecovery)},
 		{settings.KeyUptimeFailThreshold, strconv.Itoa(settings.ClampInt(cfg.UptimeFailThreshold, 1, 60))},
 		{settings.KeyUptimeRecoveryThreshold, strconv.Itoa(settings.ClampInt(cfg.UptimeRecoveryThreshold, 1, 60))},
+		{settings.KeyDeployNotifySuccess, formatBool(cfg.DeployNotifySuccess)},
+		{settings.KeyDeployNotifyFailure, formatBool(cfg.DeployNotifyFailure)},
 	}
 
 	// Use a transaction so all keys are written atomically.
