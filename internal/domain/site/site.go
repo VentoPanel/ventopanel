@@ -19,6 +19,7 @@ type Site struct {
 	Domain        string
 	Runtime       string
 	RepositoryURL string
+	Branch        string
 	Status        string
 	WebhookToken  string
 }

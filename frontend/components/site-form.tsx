@@ -23,6 +23,7 @@ const defaultForm: SiteInput = {
   domain: "",
   runtime: "node",
   repository_url: "",
+  branch: "main",
   status: "draft",
 };
 
@@ -45,6 +46,7 @@ export function SiteForm({ open, onOpenChange, site }: SiteFormProps) {
         domain: site.Domain,
         runtime: site.Runtime,
         repository_url: site.RepositoryURL,
+        branch: site.Branch || "main",
         status: site.Status,
       });
     } else {
@@ -157,6 +159,19 @@ export function SiteForm({ open, onOpenChange, site }: SiteFormProps) {
                 Runtime auto-detected from repo files
               </p>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="si-branch">Branch</Label>
+            <Input
+              id="si-branch"
+              placeholder="main"
+              value={form.branch}
+              onChange={(e) => set("branch", e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Branch to deploy. Webhook auto-deploys only when this branch is pushed.
+            </p>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

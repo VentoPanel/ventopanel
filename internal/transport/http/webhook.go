@@ -33,7 +33,9 @@ func GenerateWebhookToken() (string, error) {
 
 // Trigger POST /api/v1/webhook/:token
 // Public endpoint — no JWT required. Token IS the authentication.
-// Accepts pushes from GitHub, GitLab, Bitbucket, or any HTTP client.
+// Supports GitHub, GitLab, Bitbucket and plain HTTP POST.
+// Branch filtering: if the payload contains a "ref" field (e.g. "refs/heads/main"),
+// the deploy is skipped when the pushed branch doesn't match the site's branch.
 func (h *WebhookHandler) Trigger(c *gin.Context) {
 	token := strings.TrimSpace(c.Param("token"))
 	if token == "" {
@@ -44,7 +46,6 @@ func (h *WebhookHandler) Trigger(c *gin.Context) {
 	site, err := h.siteRepo.FindByWebhookToken(c.Request.Context(), token)
 	if err != nil {
 		if err == sitedomain.ErrNotFound {
-			// Return 404 so attackers can't enumerate tokens.
 			c.JSON(http.StatusNotFound, errorResponse{Error: "not found"})
 			return
 		}
@@ -55,6 +56,31 @@ func (h *WebhookHandler) Trigger(c *gin.Context) {
 	if strings.TrimSpace(site.RepositoryURL) == "" {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "site has no repository URL"})
 		return
+	}
+
+	// Parse optional JSON body to check the pushed branch (GitHub/GitLab send {"ref":"refs/heads/main"}).
+	var payload struct {
+		Ref string `json:"ref"`
+	}
+	// Best-effort: ignore parse errors (plain POST with no body is valid too).
+	_ = c.ShouldBindJSON(&payload)
+
+	if payload.Ref != "" {
+		// "refs/heads/main" → "main", "refs/heads/feature/x" → "feature/x"
+		pushedBranch := strings.TrimPrefix(payload.Ref, "refs/heads/")
+		siteBranch := site.Branch
+		if siteBranch == "" {
+			siteBranch = "main"
+		}
+		if pushedBranch != siteBranch {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      false,
+				"message": "branch not tracked, deploy skipped",
+				"pushed":  pushedBranch,
+				"tracked": siteBranch,
+			})
+			return
+		}
 	}
 
 	if err := h.deployService.EnqueueDeploy(c.Request.Context(), site.ID); err != nil {

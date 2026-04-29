@@ -179,7 +179,11 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		appDir := fmt.Sprintf("/opt/ventopanel/sites/%s/app", site.ID)
 		appPort := derivePort(site.ID)
 		envFlags := s.buildEnvFlags(ctx, site.ID)
-		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, appPort, envFlags)
+		branch := site.Branch
+		if branch == "" {
+			branch = "main"
+		}
+		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, branch, appPort, envFlags)
 		scriptB64 := base64.StdEncoding.EncodeToString([]byte(script))
 		nginxContent := nginxProxyTemplate(site.Domain, appPort)
 		nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
@@ -470,13 +474,14 @@ func derivePort(siteID string) int {
 // The script is designed to be piped to sh via base64:
 //
 //	echo BASE64 | base64 -d | sh 2>&1
-func repoDeployScript(siteID, repoURL, appDir string, appPort int, envFlags string) string {
+func repoDeployScript(siteID, repoURL, appDir, branch string, appPort int, envFlags string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
 
 APP_DIR="%s"
 SITE_ID="%s"
 REPO_URL="%s"
+BRANCH="%s"
 PORT=%d
 
 mkdir -p "$APP_DIR"
@@ -485,17 +490,17 @@ mkdir -p "$APP_DIR"
 if [ -d "$APP_DIR/.git" ]; then
   CURRENT_REMOTE=$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || echo "")
   if [ "$CURRENT_REMOTE" = "$REPO_URL" ]; then
-    echo "==> Updating repo..."
-    git -C "$APP_DIR" fetch --depth 1 origin
+    echo "==> Updating branch $BRANCH..."
+    git -C "$APP_DIR" fetch --depth 1 origin "$BRANCH"
     git -C "$APP_DIR" reset --hard FETCH_HEAD
   else
-    echo "==> Repo URL changed, re-cloning..."
+    echo "==> Repo URL changed, re-cloning branch $BRANCH..."
     rm -rf "$APP_DIR"
-    git clone --depth 1 "$REPO_URL" "$APP_DIR"
+    git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
   fi
 else
-  echo "==> Cloning repo..."
-  git clone --depth 1 "$REPO_URL" "$APP_DIR"
+  echo "==> Cloning branch $BRANCH..."
+  git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
 fi
 
 cd "$APP_DIR"
@@ -535,7 +540,7 @@ docker run -d \
   "ventopanel_${SITE_ID}"
 
 echo "==> Done."
-`, appDir, siteID, repoURL, appPort, envFlags)
+`, appDir, siteID, repoURL, branch, appPort, envFlags)
 }
 
 // nginxProxyTemplate proxies requests to a Docker container on appPort.

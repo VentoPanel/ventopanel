@@ -26,6 +26,7 @@ type createSiteRequest struct {
 	Domain        string `json:"domain" binding:"required"`
 	Runtime       string `json:"runtime" binding:"required"`
 	RepositoryURL string `json:"repository_url"`
+	Branch        string `json:"branch"`
 	Status        string `json:"status"`
 }
 
@@ -35,6 +36,7 @@ type updateSiteRequest struct {
 	Domain        string `json:"domain" binding:"required"`
 	Runtime       string `json:"runtime" binding:"required"`
 	RepositoryURL string `json:"repository_url"`
+	Branch        string `json:"branch"`
 	Status        string `json:"status"`
 }
 

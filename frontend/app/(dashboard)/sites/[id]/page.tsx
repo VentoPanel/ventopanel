@@ -403,8 +403,16 @@ export default function SiteDetailPage({
                 Repository
               </CardTitle>
             </CardHeader>
-            <CardContent className="truncate text-sm font-medium">
-              {site.RepositoryURL || <span className="text-muted-foreground">—</span>}
+            <CardContent className="space-y-1">
+              <div className="truncate text-sm font-medium">
+                {site.RepositoryURL || <span className="text-muted-foreground">—</span>}
+              </div>
+              {site.Branch && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <span>branch:</span>
+                  <code className="font-mono bg-muted px-1 rounded">{site.Branch}</code>
+                </div>
+              )}
             </CardContent>
           </Card>
           <Card>

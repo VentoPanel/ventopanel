@@ -67,6 +67,7 @@ export interface Site {
   Domain: string;
   Runtime: string;
   RepositoryURL: string;
+  Branch: string;
   Status: string;
   WebhookToken: string;
   CreatedAt: string;
@@ -103,6 +104,7 @@ export type SiteInput = {
   domain: string;
   runtime: string;
   repository_url: string;
+  branch: string;
   status?: string;
 };
 

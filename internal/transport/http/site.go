@@ -108,12 +108,17 @@ func (h *SiteHandler) Create(c *gin.Context) {
 	}
 
 	webhookToken, _ := GenerateWebhookToken()
+	branch := strings.TrimSpace(req.Branch)
+	if branch == "" {
+		branch = "main"
+	}
 	site, err := h.service.Create(c.Request.Context(), domain.Site{
 		ServerID:      req.ServerID,
 		Name:          req.Name,
 		Domain:        req.Domain,
 		Runtime:       req.Runtime,
 		RepositoryURL: req.RepositoryURL,
+		Branch:        branch,
 		Status:        req.Status,
 		WebhookToken:  webhookToken,
 	})
@@ -202,6 +207,10 @@ func (h *SiteHandler) Update(c *gin.Context) {
 		return
 	}
 
+	updBranch := strings.TrimSpace(req.Branch)
+	if updBranch == "" {
+		updBranch = "main"
+	}
 	site, err := h.service.Update(c.Request.Context(), domain.Site{
 		ID:            c.Param("id"),
 		ServerID:      req.ServerID,
@@ -209,6 +218,7 @@ func (h *SiteHandler) Update(c *gin.Context) {
 		Domain:        req.Domain,
 		Runtime:       req.Runtime,
 		RepositoryURL: req.RepositoryURL,
+		Branch:        updBranch,
 		Status:        req.Status,
 	})
 	if err != nil {
