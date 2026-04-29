@@ -30,7 +30,6 @@ import {
   Lock,
   CheckSquare,
   Server,
-  MonitorCheck,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,13 +45,6 @@ import {
   type FileItem,
   type Server,
 } from "@/lib/api";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -481,32 +473,22 @@ function FilesPageInner() {
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* ── Server selector ── */}
-          <Select
-            value={serverId || "__local__"}
-            onValueChange={handleServerChange}
-          >
-            <SelectTrigger className="h-8 w-[180px] text-xs">
-              <Server className="mr-2 h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <SelectValue placeholder="Select server" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__local__">
-                <span className="flex items-center gap-2">
-                  <MonitorCheck className="h-3.5 w-3.5 text-green-500" />
-                  Local (panel host)
-                </span>
-              </SelectItem>
+          <div className="relative flex items-center">
+            <Server className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              value={serverId || "__local__"}
+              onChange={(e) => handleServerChange(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background pl-8 pr-8 text-xs font-medium shadow-sm focus:outline-none focus:ring-1 focus:ring-ring appearance-none cursor-pointer hover:bg-accent transition-colors min-w-[170px]"
+            >
+              <option value="__local__">⬡ Local (panel host)</option>
               {serversData?.map((srv: Server) => (
-                <SelectItem key={srv.ID} value={srv.ID}>
-                  <span className="flex items-center gap-2">
-                    <Server className="h-3.5 w-3.5 text-blue-400" />
-                    {srv.Name}
-                    <span className="text-muted-foreground text-[10px]">{srv.Host}</span>
-                  </span>
-                </SelectItem>
+                <option key={srv.ID} value={srv.ID}>
+                  {srv.Name} ({srv.Host})
+                </option>
               ))}
-            </SelectContent>
-          </Select>
+            </select>
+            <ChevronRight className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 rotate-90 text-muted-foreground" />
+          </div>
 
           <Button variant="outline" size="sm" onClick={() => setNewDirOpen(true)}>
             <FolderPlus className="mr-2 h-4 w-4" /> New Folder
