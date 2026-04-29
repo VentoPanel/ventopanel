@@ -786,3 +786,64 @@ export async function inviteUser(email: string, password: string, team_id: strin
     body: JSON.stringify({ email, password, team_id }),
   });
 }
+
+// ── File Manager ──────────────────────────────────────────────────────────────
+
+export interface FileItem {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  mod_time: string;
+  ext: string;
+}
+
+export async function fmListDir(path: string): Promise<{ items: FileItem[]; root: string }> {
+  return apiFetch(`/files?path=${encodeURIComponent(path)}`);
+}
+
+export async function fmReadFile(path: string): Promise<{ content: string; path: string }> {
+  return apiFetch(`/files/content?path=${encodeURIComponent(path)}`);
+}
+
+export async function fmWriteFile(path: string, content: string): Promise<void> {
+  await apiFetch(`/files/content?path=${encodeURIComponent(path)}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function fmDelete(path: string): Promise<void> {
+  await apiFetch(`/files?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+}
+
+export async function fmCreateDir(path: string): Promise<void> {
+  await apiFetch(`/files/dir?path=${encodeURIComponent(path)}`, { method: "POST" });
+}
+
+export async function fmRename(old_path: string, new_path: string): Promise<void> {
+  await apiFetch("/files/rename", {
+    method: "POST",
+    body: JSON.stringify({ old_path, new_path }),
+  });
+}
+
+export async function fmUpload(dir: string, files: File[]): Promise<void> {
+  const token = getToken();
+  const form = new FormData();
+  files.forEach((f) => form.append("file", f));
+  const res = await fetch(`/api/v1/files/upload?path=${encodeURIComponent(dir)}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Upload failed");
+  }
+}
+
+export function fmDownloadUrl(path: string): string {
+  const token = getToken();
+  return `/api/v1/files/download?path=${encodeURIComponent(path)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+}

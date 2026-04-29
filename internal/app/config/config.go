@@ -26,6 +26,7 @@ type Config struct {
 	AuthJWTAudience    string        `env:"AUTH_JWT_AUDIENCE" env-default:""`
 	BackupDir          string        `env:"BACKUP_DIR" env-default:"/data/backups"`
 	BackupKeepCount    int           `env:"BACKUP_KEEP_COUNT" env-default:"7"`
+	FileManagerRoot    string        `env:"FILE_MANAGER_ROOT" env-default:"/var/www"`
 }
 
 func Load() (*Config, error) {

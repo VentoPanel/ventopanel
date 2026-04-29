@@ -19,6 +19,7 @@ import (
 	"github.com/your-org/ventopanel/internal/infra/security"
 	"github.com/your-org/ventopanel/internal/infra/ssh"
 	postgresrepo "github.com/your-org/ventopanel/internal/repository/postgres"
+	filemanagerpkg "github.com/your-org/ventopanel/internal/filemanager"
 	alertsvc "github.com/your-org/ventopanel/internal/service/alert"
 	backupsvc "github.com/your-org/ventopanel/internal/service/backup"
 	uptimesvc "github.com/your-org/ventopanel/internal/service/uptime"
@@ -126,7 +127,7 @@ func main() {
 	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
 	dashboardRepo := postgresrepo.NewDashboardRepository(pgPool)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo, apiTokenRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo, apiTokenRepo, cfg.FileManagerRoot)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -181,6 +182,7 @@ func buildRouter(
 	dashboardRepo *postgresrepo.DashboardRepository,
 	siteDomainRepo *postgresrepo.SiteDomainRepository,
 	apiTokenRepo *postgresrepo.APITokenRepository,
+	fileManagerRoot string,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -218,7 +220,10 @@ func buildRouter(
 	siteDomainHandler := httptransport.NewSiteDomainHandler(siteDomainRepo, teamService)
 	apiTokenHandler := httptransport.NewAPITokenHandler(apiTokenRepo)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler)
+	fmSvc := filemanagerpkg.NewService(fileManagerRoot)
+	fileManagerHandler := httptransport.NewFileManagerHandler(fmSvc)
+
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler, fileManagerHandler)
 
 	return engine
 }

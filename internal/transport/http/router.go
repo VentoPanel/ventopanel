@@ -23,6 +23,7 @@ func RegisterRoutes(
 	templateHandler *TemplateHandler,
 	siteDomainHandler *SiteDomainHandler,
 	apiTokenHandler *APITokenHandler,
+	fileManagerHandler *FileManagerHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -38,6 +39,16 @@ func RegisterRoutes(
 		api.GET("/api-tokens", apiTokenHandler.ListTokens)
 		api.POST("/api-tokens", apiTokenHandler.CreateToken)
 		api.DELETE("/api-tokens/:id", apiTokenHandler.RevokeToken)
+
+		// File Manager
+		api.GET("/files", fileManagerHandler.ListDir)
+		api.GET("/files/content", fileManagerHandler.ReadFile)
+		api.PUT("/files/content", fileManagerHandler.WriteFile)
+		api.DELETE("/files", fileManagerHandler.DeletePath)
+		api.POST("/files/dir", fileManagerHandler.CreateDir)
+		api.POST("/files/rename", fileManagerHandler.Rename)
+		api.POST("/files/upload", fileManagerHandler.Upload)
+		api.GET("/files/download", fileManagerHandler.Download)
 		if devAuthHandler != nil {
 			api.POST("/dev/token", devAuthHandler.IssueToken)
 		}

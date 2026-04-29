@@ -54,8 +54,10 @@ services:
       AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-}
       BACKUP_DIR: ${BACKUP_DIR:-/data/backups}
       BACKUP_KEEP_COUNT: ${BACKUP_KEEP_COUNT:-7}
+      FILE_MANAGER_ROOT: ${FILE_MANAGER_ROOT:-/var/www}
     volumes:
       - backup_data:/data/backups
+      - www_data:/var/www
     ports:
       - "8080:8080"
 
@@ -75,3 +77,4 @@ volumes:
   postgres_data:
   redis_data:
   backup_data:
+  www_data:
