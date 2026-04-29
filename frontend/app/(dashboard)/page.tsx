@@ -22,11 +22,16 @@ import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
   deployed: "bg-green-100 text-green-800",
+  ssl_pending: "bg-green-100 text-green-800",
   connected: "bg-green-100 text-green-800",
+  ready_for_deploy: "bg-green-100 text-green-800",
   provisioned: "bg-blue-100 text-blue-800",
   pending: "bg-yellow-100 text-yellow-800",
   deploying: "bg-blue-100 text-blue-800",
   provisioning: "bg-blue-100 text-blue-800",
+  deploy_failed: "bg-red-100 text-red-800",
+  provision_failed: "bg-red-100 text-red-800",
+  connection_failed: "bg-red-100 text-red-800",
   error: "bg-red-100 text-red-800",
   access_denied: "bg-red-100 text-red-800",
   failed: "bg-red-100 text-red-800",
@@ -85,11 +90,17 @@ export default function DashboardPage() {
   const { data: recentAudit, isFetching: auditFetching } = useRecentAudit(8);
 
   const totalServers = servers?.length ?? 0;
-  const connectedServers = servers?.filter((s) => s.Status === "connected").length ?? 0;
+  // "active" servers = anything past initial connection (connected OR provisioned OR ready)
+  const activeServers = servers?.filter((s) =>
+    ["connected", "provisioning", "ready_for_deploy", "provisioned"].includes(s.Status)
+  ).length ?? 0;
   const errorServers = servers?.filter((s) => isError(s.Status)).length ?? 0;
 
   const totalSites = sites?.length ?? 0;
-  const deployedSites = sites?.filter((s) => s.Status === "deployed").length ?? 0;
+  // "live" sites = deployed or ssl_pending (site is serving, just no cert yet)
+  const liveSites = sites?.filter((s) =>
+    ["deployed", "ssl_pending"].includes(s.Status)
+  ).length ?? 0;
   const errorSites = sites?.filter((s) => isError(s.Status)).length ?? 0;
 
   const recentEvents = recentAudit?.items ?? [];
@@ -125,8 +136,8 @@ export default function DashboardPage() {
           icon={Server}
           sub={
             errorServers > 0
-              ? `${errorServers} error${errorServers > 1 ? "s" : ""} · ${connectedServers} connected`
-              : `${connectedServers} connected`
+              ? `${errorServers} error${errorServers > 1 ? "s" : ""} · ${activeServers} active`
+              : `${activeServers} active`
           }
           subColor={errorServers > 0 ? "text-red-600" : undefined}
           href="/servers"
@@ -137,8 +148,8 @@ export default function DashboardPage() {
           icon={Globe}
           sub={
             errorSites > 0
-              ? `${errorSites} error${errorSites > 1 ? "s" : ""} · ${deployedSites} deployed`
-              : `${deployedSites} deployed`
+              ? `${errorSites} error${errorSites > 1 ? "s" : ""} · ${liveSites} live`
+              : `${liveSites} live`
           }
           subColor={errorSites > 0 ? "text-red-600" : undefined}
           href="/sites"
