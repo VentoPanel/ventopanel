@@ -291,9 +291,16 @@ func (s *Service) GetServerContainers(ctx context.Context, serverID string) ([]S
 	if err != nil {
 		return nil, err
 	}
+
+	sshCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	// Format: name|status|ports|image, one per line, only ventopanel_ containers.
 	cmd := `docker ps -a --filter 'name=ventopanel_' --format '{{.Names}}|{{.Status}}|{{.Ports}}|{{.Image}}'`
-	out, _ := s.ssh.RunOutput(ctx, *server, cmd)
+	out, sshErr := s.ssh.RunOutput(sshCtx, *server, cmd)
+	if sshErr != nil {
+		return nil, fmt.Errorf("docker ps: %w", sshErr)
+	}
 	out = strings.TrimSpace(out)
 	if out == "" {
 		return []ServerContainer{}, nil

@@ -152,22 +152,17 @@ func (s *Service) GetStats(ctx context.Context, id string) (*domain.ServerStats,
 	sshCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Single compound command — one SSH session, five output sections
-	// separated by "---" markers:
-	//  0: nproc (CPU core count)
-	//  1: load avg 1-min (from /proc/loadavg)
-	//  2: RAM total MB
-	//  3: RAM used MB
-	//  4: disk total / used / free / pct  (space-separated)
-	//  5: uptime string
+	// Each sub-command is separated by "---" and uses "|| true" so a
+	// single failure (e.g. missing binary) doesn't abort the whole script.
+	// This prevents the "all zeros" symptom caused by an && chain breakage.
 	script := strings.Join([]string{
-		`nproc`,
-		`awk '{print $1}' /proc/loadavg`,
-		`free -m | awk '/^Mem:/{print $2}'`,
-		`free -m | awk '/^Mem:/{print $3}'`,
-		`df -h / | tail -1 | awk '{print $2,$3,$4,$5}'`,
-		`uptime -p 2>/dev/null || uptime | awk -F'up ' '{print $2}' | awk -F',' '{print $1}'`,
-	}, " && echo '---' && ")
+		`nproc 2>/dev/null || echo 0`,
+		`awk '{print $1}' /proc/loadavg 2>/dev/null || echo 0`,
+		`free -m 2>/dev/null | awk '/^Mem:/{print $2}' || echo 0`,
+		`free -m 2>/dev/null | awk '/^Mem:/{print $3}' || echo 0`,
+		`df -h / 2>/dev/null | tail -1 | awk '{print $2,$3,$4,$5}' || echo '? ? ? ?'`,
+		`uptime -p 2>/dev/null || uptime 2>/dev/null | awk -F'up ' '{print $2}' | awk -F',' '{print $1}' || echo unknown`,
+	}, "; echo '---'; ")
 
 	out, err := s.sshExecutor.RunOutput(sshCtx, *server, script)
 	if err != nil {

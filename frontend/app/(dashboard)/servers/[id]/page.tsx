@@ -115,17 +115,25 @@ export default function ServerDetailPage({
   const { data: serverSites = [] } = useQuery<ServerSite[]>({
     queryKey: ["server-sites", id],
     queryFn: () => fetchServerSites(id),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
-    retry: false,
+    staleTime: 55_000,
+    retry: 1,
+    retryDelay: 3000,
+    // Keep the previous list visible while a refetch is in-flight or errored.
+    placeholderData: (prev) => prev,
   });
 
-  const { data: containers = [] } = useQuery<ServerContainer[]>({
+  const { data: containers = [], isError: containersError } = useQuery<ServerContainer[]>({
     queryKey: ["server-containers", id],
     queryFn: () => fetchServerContainers(id),
-    refetchInterval: 20_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
-    retry: false,
+    staleTime: 25_000,
+    retry: 1,
+    retryDelay: 3000,
+    // Keep the previous list visible while a refetch is in-flight or errored.
+    placeholderData: (prev) => prev,
   });
 
   async function handleConnect() {
@@ -432,19 +440,27 @@ export default function ServerDetailPage({
       </Card>
 
       {/* Docker containers */}
-      {containers.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <Container className="h-4 w-4 text-muted-foreground" />
-              Docker Containers
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <Container className="h-4 w-4 text-muted-foreground" />
+            Docker Containers
+            {containers.length > 0 && (
               <span className="ml-auto text-xs font-normal text-muted-foreground">
                 {containers.filter(c => c.status.toLowerCase().startsWith("up")).length} running
                 {" / "}{containers.length} total
               </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {containersError && containers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Could not reach Docker — server may be offline.
+            </p>
+          ) : containers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No ventopanel containers found.</p>
+          ) : (
             <div className="divide-y text-sm">
               {containers.map((c) => {
                 const running = c.status.toLowerCase().startsWith("up");
@@ -465,9 +481,9 @@ export default function ServerDetailPage({
                 );
               })}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
