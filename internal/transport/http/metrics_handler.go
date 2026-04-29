@@ -117,6 +117,8 @@ func (h *ServerMetricsHandler) Stream(c *gin.Context) {
 // Output (pipe-separated):
 //
 //	cpu_pct | ram_total_mb | ram_used_mb | disk_total | disk_used | disk_pct | load1 | load5 | rx_kb | tx_kb
+// metricsScript output (pipe-separated, 10 fields):
+//   cpu_pct | ram_total_mb | ram_used_mb | disk_total | disk_used | disk_pct | load1 | load5 | rx_kb | tx_kb
 const metricsScript = `
 s1=$(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8,$5}' /proc/stat)
 n1=$(awk 'NR>2{r+=$2;t+=$10}END{print r,t}' /proc/net/dev)
@@ -131,9 +133,12 @@ r1=$(echo $n1|awk '{print $1}') x1=$(echo $n1|awk '{print $2}')
 r2=$(echo $n2|awk '{print $1}') x2=$(echo $n2|awk '{print $2}')
 mt=$(awk '/^MemTotal/{print int($2/1024)}' /proc/meminfo)
 ma=$(awk '/^MemAvailable/{print int($2/1024)}' /proc/meminfo)
-df_line=$(df -h / | awk 'NR==2{print $2,$3,$5}')
-la=$(awk '{print $1,$2}' /proc/loadavg)
-echo "$cpu|$mt|$((mt-ma))|$df_line|$la|$(( (r2-r1)/1024 ))|$(( (x2-x1)/1024 ))"
+dtotal=$(df -h / | awk 'NR==2{print $2}')
+dused=$(df -h / | awk 'NR==2{print $3}')
+dpct=$(df -h / | awk 'NR==2{print $5}')
+la1=$(awk '{print $1}' /proc/loadavg)
+la5=$(awk '{print $2}' /proc/loadavg)
+echo "$cpu|$mt|$((mt-ma))|$dtotal|$dused|$dpct|$la1|$la5|$(( (r2-r1)/1024 ))|$(( (x2-x1)/1024 ))"
 `
 
 func collectMetrics(sshCli *gossh.Client) (*MetricsSnapshot, error) {
@@ -147,23 +152,19 @@ func collectMetrics(sshCli *gossh.Client) (*MetricsSnapshot, error) {
 		return nil, fmt.Errorf("unexpected metrics output (%d parts): %q", len(parts), out)
 	}
 
+	// Expected order (10 pipe-separated fields):
+	// 0:cpu_pct 1:ram_total 2:ram_used 3:disk_total 4:disk_used 5:disk_pct 6:load1 7:load5 8:rx_kb 9:tx_kb
 	snap := &MetricsSnapshot{Timestamp: time.Now().UnixMilli()}
 	snap.CPUPct, _ = strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 	snap.RAMTotalMB, _ = strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
 	snap.RAMUsedMB, _ = strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
-
-	// disk: "20G 15G 78%"
-	diskParts := strings.Fields(parts[3])
-	if len(diskParts) >= 3 {
-		snap.DiskTotal = diskParts[0]
-		snap.DiskUsed  = diskParts[1]
-		snap.DiskPct   = diskParts[2]
-	}
-
-	snap.Load1, _ = strconv.ParseFloat(strings.TrimSpace(parts[4]), 64)
-	snap.Load5, _ = strconv.ParseFloat(strings.TrimSpace(parts[5]), 64)
-	snap.NetRxKB, _ = strconv.ParseInt(strings.TrimSpace(parts[6]), 10, 64)
-	snap.NetTxKB, _ = strconv.ParseInt(strings.TrimSpace(parts[7]), 10, 64)
+	snap.DiskTotal = strings.TrimSpace(parts[3])
+	snap.DiskUsed  = strings.TrimSpace(parts[4])
+	snap.DiskPct   = strings.TrimSpace(parts[5])
+	snap.Load1, _ = strconv.ParseFloat(strings.TrimSpace(parts[6]), 64)
+	snap.Load5, _ = strconv.ParseFloat(strings.TrimSpace(parts[7]), 64)
+	snap.NetRxKB, _ = strconv.ParseInt(strings.TrimSpace(parts[8]), 10, 64)
+	snap.NetTxKB, _ = strconv.ParseInt(strings.TrimSpace(parts[9]), 10, 64)
 
 	return snap, nil
 }
