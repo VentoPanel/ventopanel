@@ -21,6 +21,7 @@ import (
 	"github.com/your-org/ventopanel/internal/infra/ssh"
 	postgresrepo "github.com/your-org/ventopanel/internal/repository/postgres"
 	alertsvc "github.com/your-org/ventopanel/internal/service/alert"
+	uptimesvc "github.com/your-org/ventopanel/internal/service/uptime"
 	authsvc "github.com/your-org/ventopanel/internal/service/auth"
 	auditsvc "github.com/your-org/ventopanel/internal/service/audit"
 	deploysvc "github.com/your-org/ventopanel/internal/service/deploy"
@@ -77,6 +78,7 @@ func main() {
 	serverRepo := postgresrepo.NewServerRepository(pgPool, encryptor)
 	siteRepo := postgresrepo.NewSiteRepository(pgPool)
 	envRepo := postgresrepo.NewEnvRepository(pgPool, encryptor)
+	uptimeRepo := postgresrepo.NewUptimeRepository(pgPool)
 	teamRepo := postgresrepo.NewTeamRepository(pgPool)
 	userRepo := postgresrepo.NewUserRepository(pgPool)
 	statusEventRepo := postgresrepo.NewStatusEventRepository(pgPool)
@@ -116,8 +118,9 @@ func main() {
 	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo)
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier).WithSettingsRepo(settingsRepo)
+	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -130,6 +133,7 @@ func main() {
 	workerMux := worker.NewMux(logger, deployService, provisionService, sslService, alertService)
 	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
 	startSSLRenewScheduler(schedulerCtx, logger, sslService)
+	startUptimeScheduler(schedulerCtx, logger, uptimeService)
 
 	go func() {
 		logger.Info().Str("addr", httpServer.Addr).Str("env", cfg.AppEnv).Msg("starting http server")
@@ -165,6 +169,7 @@ func buildRouter(
 	userRepo *postgresrepo.UserRepository,
 	envRepo *postgresrepo.EnvRepository,
 	siteRepo *postgresrepo.SiteRepository,
+	uptimeRepo *postgresrepo.UptimeRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -194,10 +199,33 @@ func buildRouter(
 	userHandler := httptransport.NewUserHandler(userRepo)
 	envHandler := httptransport.NewEnvHandler(envRepo, teamService)
 	webhookHandler := httptransport.NewWebhookHandler(siteRepo, deployService)
+	uptimeHandler := httptransport.NewUptimeHandler(uptimeRepo, teamService)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler)
 
 	return engine
+}
+
+func startUptimeScheduler(ctx context.Context, logger ilogger.Logger, svc *uptimesvc.Service) {
+	go func() {
+		// Initial delay so the app fully starts before first check.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			svc.CheckAll(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	logger.Info().Msg("uptime monitor started (interval: 60s)")
 }
 
 func startSSLRenewScheduler(ctx context.Context, logger ilogger.Logger, sslService *sslsvc.Service) {

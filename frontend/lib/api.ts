@@ -454,3 +454,21 @@ export async function fetchServerContainers(serverID: string): Promise<ServerCon
   const data = await apiFetch<{ items: ServerContainer[] }>(`/servers/${serverID}/containers`);
   return data.items ?? [];
 }
+
+export interface UptimeCheck {
+  id: string;
+  checked_at: string;
+  status: "up" | "down";
+  latency_ms: number;
+  status_code?: number;
+  error?: string;
+}
+
+export interface UptimeData {
+  uptime_pct: number;
+  checks: UptimeCheck[];
+}
+
+export async function fetchUptime(siteID: string, limit = 90): Promise<UptimeData> {
+  return apiFetch<UptimeData>(`/sites/${siteID}/uptime?limit=${limit}`);
+}

@@ -27,6 +27,7 @@ import {
   Webhook,
   Copy,
   Check,
+  Activity,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -42,10 +43,12 @@ import {
   upsertEnvVar,
   deleteEnvVar,
   regenerateWebhookToken,
+  fetchUptime,
   type TaskLog,
   type SSLCertInfo,
   type ContainerInfo,
   type EnvVarItem,
+  type UptimeData,
 } from "@/lib/api";
 import { useAuditEvents } from "@/hooks/use-audit";
 import { useDeploySite, useDeleteSite } from "@/hooks/use-site-mutations";
@@ -188,6 +191,13 @@ export default function SiteDetailPage({
     queryKey: ["env", id],
     queryFn: () => fetchEnvVars(id),
     enabled: hasRepo,
+    retry: false,
+  });
+
+  const { data: uptimeData, isFetching: uptimeFetching } = useQuery<UptimeData>({
+    queryKey: ["uptime", id],
+    queryFn: () => fetchUptime(id, 90),
+    refetchInterval: 60_000,
     retry: false,
   });
 
@@ -736,6 +746,82 @@ export default function SiteDetailPage({
           </CardContent>
         </Card>
       )}
+
+      {/* Uptime Monitoring */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="h-4 w-4" />
+              Uptime Monitor
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {uptimeFetching && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
+              {uptimeData && (
+                <span className={cn(
+                  "text-sm font-semibold",
+                  uptimeData.uptime_pct >= 99 ? "text-green-600" :
+                  uptimeData.uptime_pct >= 90 ? "text-yellow-600" : "text-red-600"
+                )}>
+                  {uptimeData.uptime_pct.toFixed(1)}%
+                </span>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!uptimeData ? (
+            <p className="text-sm text-muted-foreground">No data yet — checks run every minute.</p>
+          ) : uptimeData.checks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No checks yet. First check runs within 60s of startup.</p>
+          ) : (
+            <div className="space-y-3">
+              {/* Last status */}
+              {uptimeData.checks[0] && (
+                <div className="flex items-center gap-3 text-sm">
+                  <span className={cn(
+                    "inline-flex h-2.5 w-2.5 rounded-full",
+                    uptimeData.checks[0].status === "up" ? "bg-green-500" : "bg-red-500"
+                  )} />
+                  <span className="font-medium capitalize">
+                    {uptimeData.checks[0].status === "up" ? "Operational" : "Down"}
+                  </span>
+                  {uptimeData.checks[0].latency_ms > 0 && (
+                    <span className="text-muted-foreground">
+                      {uptimeData.checks[0].latency_ms}ms
+                    </span>
+                  )}
+                  {uptimeData.checks[0].status_code && (
+                    <span className="text-muted-foreground">
+                      HTTP {uptimeData.checks[0].status_code}
+                    </span>
+                  )}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    Last checked{" "}
+                    {formatDistanceToNow(new Date(uptimeData.checks[0].checked_at), { addSuffix: true })}
+                  </span>
+                </div>
+              )}
+              {/* Dot grid — last 90 checks, oldest→newest left→right */}
+              <div className="flex flex-wrap gap-1" title="Last 90 checks (oldest → newest)">
+                {[...uptimeData.checks].reverse().map((ch) => (
+                  <span
+                    key={ch.id}
+                    title={`${ch.status.toUpperCase()} · ${new Date(ch.checked_at).toLocaleString()}${ch.latency_ms ? ` · ${ch.latency_ms}ms` : ""}${ch.error ? ` · ${ch.error}` : ""}`}
+                    className={cn(
+                      "h-3 w-3 rounded-sm",
+                      ch.status === "up" ? "bg-green-500" : "bg-red-500"
+                    )}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Last {uptimeData.checks.length} checks shown · hover a dot for details
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Deploy Logs */}
       <div>

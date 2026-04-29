@@ -17,6 +17,7 @@ func RegisterRoutes(
 	userHandler *UserHandler,
 	envHandler *EnvHandler,
 	webhookHandler *WebhookHandler,
+	uptimeHandler *UptimeHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -56,6 +57,7 @@ func RegisterRoutes(
 		api.PUT("/sites/:id/env", envHandler.UpsertEnv)
 		api.DELETE("/sites/:id/env/:key", envHandler.DeleteEnv)
 		api.POST("/sites/:id/webhook/regenerate", webhookHandler.Regenerate)
+		api.GET("/sites/:id/uptime", uptimeHandler.GetUptime)
 		// Public — no JWT, token IS the auth.
 		api.POST("/webhook/:token", webhookHandler.Trigger)
 		api.GET("/teams/access", teamHandler.List)
