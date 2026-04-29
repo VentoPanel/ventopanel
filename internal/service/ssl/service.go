@@ -2,9 +2,11 @@ package ssl
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"math/rand"
+	"net"
 	"sync"
 	"strings"
 	"time"
@@ -91,48 +93,42 @@ func (s *Service) WithSSH(executor deploydomain.SSHExecutor) *Service {
 	return s
 }
 
-// GetCertInfo fetches SSL certificate expiry for the given site via SSH.
-// It always returns a usable *SSLCertInfo (status "no_cert" on any error/timeout)
-// so the caller never has to handle a nil result for display purposes.
+// GetCertInfo checks the TLS certificate served by the site's domain directly.
+// This approach is instant, SSH-free, and always reflects what the browser sees.
+// It falls back gracefully to "no_cert" on any error.
 func (s *Service) GetCertInfo(ctx context.Context, siteID string) (*SSLCertInfo, error) {
 	site, err := s.siteRepo.GetByID(ctx, siteID)
 	if err != nil {
 		return nil, err
 	}
 
-	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
-	if err != nil {
-		return nil, err
-	}
+	domain := strings.TrimSpace(site.Domain)
+	info := &SSLCertInfo{Domain: domain, Status: "no_cert"}
 
-	info := &SSLCertInfo{Domain: site.Domain, Status: "no_cert"}
-
-	if s.ssh == nil {
+	if domain == "" {
 		return info, nil
 	}
 
-	// Bound the SSH call to 8 s so a slow/busy server doesn't block the UI.
-	sshCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
+	// Dial the domain on port 443 with a short deadline.
+	dialer := &net.Dialer{Timeout: 8 * time.Second}
+	tlsCfg := &tls.Config{
+		ServerName:         domain,
+		InsecureSkipVerify: false, // we want real certificate verification
+	}
 
-	cmd := "openssl x509 -enddate -noout -in /etc/letsencrypt/live/" + site.Domain + "/fullchain.pem 2>/dev/null || echo no_cert"
-	out, err := s.ssh.RunOutput(sshCtx, *server, cmd)
-	if err != nil || strings.TrimSpace(out) == "no_cert" || out == "" {
-		// Treat SSH errors / timeouts as "no cert info available" — not a hard error.
+	conn, tlsErr := tls.DialWithDialer(dialer, "tcp", domain+":443", tlsCfg)
+	if tlsErr != nil {
+		// Domain unreachable or no valid TLS cert — not a hard error.
+		return info, nil
+	}
+	defer conn.Close()
+
+	certs := conn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
 		return info, nil
 	}
 
-	// Output format: "notAfter=May 28 12:00:00 2026 GMT"
-	out = strings.TrimSpace(out)
-	out = strings.TrimPrefix(out, "notAfter=")
-	expiry, parseErr := time.Parse("Jan _2 15:04:05 2006 MST", out)
-	if parseErr != nil {
-		expiry, parseErr = time.Parse("Jan  2 15:04:05 2006 MST", out)
-	}
-	if parseErr != nil {
-		return info, nil
-	}
-
+	expiry := certs[0].NotAfter
 	info.ExpiresAt = expiry
 	info.DaysLeft = int(time.Until(expiry).Hours() / 24)
 	switch {
