@@ -15,6 +15,7 @@ func RegisterRoutes(
 	auditHandler *AuditHandler,
 	settingsHandler *SettingsHandler,
 	userHandler *UserHandler,
+	envHandler *EnvHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -48,6 +49,9 @@ func RegisterRoutes(
 		api.GET("/sites/:id/container", siteHandler.GetContainerInfo)
 		api.GET("/sites/:id/container/logs", siteHandler.GetContainerLogs)
 		api.POST("/sites/:id/container/restart", siteHandler.RestartContainer)
+		api.GET("/sites/:id/env", envHandler.ListEnv)
+		api.PUT("/sites/:id/env", envHandler.UpsertEnv)
+		api.DELETE("/sites/:id/env/:key", envHandler.DeleteEnv)
 		api.GET("/teams/access", teamHandler.List)
 		api.GET("/observability/ssl", observabilityHandler.SSL)
 		// Both paths resolve to the same handler for backward compatibility.

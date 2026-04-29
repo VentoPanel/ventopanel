@@ -76,6 +76,7 @@ func main() {
 
 	serverRepo := postgresrepo.NewServerRepository(pgPool, encryptor)
 	siteRepo := postgresrepo.NewSiteRepository(pgPool)
+	envRepo := postgresrepo.NewEnvRepository(pgPool, encryptor)
 	teamRepo := postgresrepo.NewTeamRepository(pgPool)
 	userRepo := postgresrepo.NewUserRepository(pgPool)
 	statusEventRepo := postgresrepo.NewStatusEventRepository(pgPool)
@@ -112,11 +113,11 @@ func main() {
 	teamService := teamsvc.NewService(teamRepo)
 	auditService := auditsvc.NewService(statusEventRepo)
 	sslService := sslsvc.NewService(siteRepo, serverRepo, sslManager, asynqClient, lockManager, statusEventRepo).WithSSH(sshExecutor)
-	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo)
+	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo)
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	alertService := alertsvc.NewService(telegramNotifier, whatsAppNotifier).WithSettingsRepo(settingsRepo)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -162,6 +163,7 @@ func buildRouter(
 	taskLogRepo *postgresrepo.TaskLogRepository,
 	settingsRepo *postgresrepo.SettingsRepository,
 	userRepo *postgresrepo.UserRepository,
+	envRepo *postgresrepo.EnvRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -189,8 +191,9 @@ func buildRouter(
 	auditHandler := httptransport.NewAuditHandler(auditService)
 	settingsHandler := httptransport.NewSettingsHandler(settingsRepo)
 	userHandler := httptransport.NewUserHandler(userRepo)
+	envHandler := httptransport.NewEnvHandler(envRepo, teamService)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler)
 
 	return engine
 }

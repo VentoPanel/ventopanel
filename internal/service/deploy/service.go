@@ -16,6 +16,7 @@ import (
 	"github.com/your-org/ventopanel/internal/domain/lifecycle"
 	"github.com/your-org/ventopanel/internal/domain/tasklog"
 	"github.com/your-org/ventopanel/internal/infra/lock"
+	pgrepo "github.com/your-org/ventopanel/internal/repository/postgres"
 )
 
 const TaskDeploySite = "deploy:site"
@@ -31,6 +32,7 @@ type Service struct {
 	lock       lockManager
 	audit      auditdomain.StatusEventWriter
 	taskLogs   tasklog.Repository
+	envRepo    *pgrepo.EnvRepository
 }
 
 type sslQueue interface {
@@ -57,6 +59,7 @@ func NewService(
 	lock lockManager,
 	audit auditdomain.StatusEventWriter,
 	taskLogs tasklog.Repository,
+	envRepo *pgrepo.EnvRepository,
 ) *Service {
 	return &Service{
 		siteRepo:   siteRepo,
@@ -69,6 +72,7 @@ func NewService(
 		lock:       lock,
 		audit:      audit,
 		taskLogs:   taskLogs,
+		envRepo:    envRepo,
 	}
 }
 
@@ -174,7 +178,8 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		// Git-based deploy: clone/pull → detect runtime → docker build → run.
 		appDir := fmt.Sprintf("/opt/ventopanel/sites/%s/app", site.ID)
 		appPort := derivePort(site.ID)
-		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, appPort)
+		envFlags := s.buildEnvFlags(ctx, site.ID)
+		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, appPort, envFlags)
 		scriptB64 := base64.StdEncoding.EncodeToString([]byte(script))
 		nginxContent := nginxProxyTemplate(site.Domain, appPort)
 		nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
@@ -346,7 +351,8 @@ func (s *Service) GetContainerLogs(ctx context.Context, siteID string, tail int)
 	return out, nil
 }
 
-// RestartContainer issues docker restart for a site's container.
+// RestartContainer stops the old container and starts a fresh one with
+// the current env vars from the database (without rebuilding the image).
 func (s *Service) RestartContainer(ctx context.Context, siteID string) error {
 	site, err := s.siteRepo.GetByID(ctx, siteID)
 	if err != nil {
@@ -359,8 +365,14 @@ func (s *Service) RestartContainer(ctx context.Context, siteID string) error {
 	if err != nil {
 		return err
 	}
-	cmd := fmt.Sprintf("docker restart ventopanel_%s", siteID)
-	_, err = s.ssh.RunOutput(ctx, *server, cmd)
+	name := fmt.Sprintf("ventopanel_%s", siteID)
+	appPort := derivePort(siteID)
+	envFlags := s.buildEnvFlags(ctx, siteID)
+
+	// Remove old container and start a fresh one so new env vars take effect.
+	script := fmt.Sprintf(`docker rm -f %s 2>/dev/null || true
+docker run -d --name %s --restart unless-stopped -p %d:3000%s %s`, name, name, appPort, envFlags, name)
+	_, err = s.ssh.RunOutput(ctx, *server, script)
 	return err
 }
 
@@ -379,6 +391,25 @@ func (s *Service) writeAudit(resourceType, resourceID, from, to, reason, taskID 
 }
 
 
+// buildEnvFlags loads site env vars from the DB and returns a shell-safe
+// "-e KEY=VALUE" string for docker run. Values containing spaces or special
+// characters are quoted with single quotes (single quotes inside are escaped).
+func (s *Service) buildEnvFlags(ctx context.Context, siteID string) string {
+	if s.envRepo == nil {
+		return ""
+	}
+	vars, err := s.envRepo.ListBySiteID(ctx, siteID)
+	if err != nil || len(vars) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, v := range vars {
+		escaped := strings.ReplaceAll(v.Value, "'", "'\\''")
+		sb.WriteString(fmt.Sprintf(" -e %s='%s'", v.Key, escaped))
+	}
+	return sb.String()
+}
+
 func derivePort(siteID string) int {
 	sum := 0
 	for _, r := range siteID {
@@ -396,7 +427,7 @@ func derivePort(siteID string) int {
 // The script is designed to be piped to sh via base64:
 //
 //	echo BASE64 | base64 -d | sh 2>&1
-func repoDeployScript(siteID, repoURL, appDir string, appPort int) string {
+func repoDeployScript(siteID, repoURL, appDir string, appPort int, envFlags string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
 
@@ -457,11 +488,11 @@ echo "==> Starting container on port ${PORT}..."
 docker run -d \
   --name "ventopanel_${SITE_ID}" \
   --restart unless-stopped \
-  -p "${PORT}:3000" \
+  -p "${PORT}:3000"%s \
   "ventopanel_${SITE_ID}"
 
 echo "==> Done."
-`, appDir, siteID, repoURL, appPort)
+`, appDir, siteID, repoURL, appPort, envFlags)
 }
 
 // nginxProxyTemplate proxies requests to a Docker container on appPort.

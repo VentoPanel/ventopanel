@@ -19,6 +19,11 @@ import {
   Container,
   RotateCcw,
   Terminal,
+  KeyRound,
+  Plus,
+  X,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -30,9 +35,13 @@ import {
   fetchContainerInfo,
   fetchContainerLogs,
   restartContainer,
+  fetchEnvVars,
+  upsertEnvVar,
+  deleteEnvVar,
   type TaskLog,
   type SSLCertInfo,
   type ContainerInfo,
+  type EnvVarItem,
 } from "@/lib/api";
 import { useAuditEvents } from "@/hooks/use-audit";
 import { useDeploySite, useDeleteSite } from "@/hooks/use-site-mutations";
@@ -164,6 +173,53 @@ export default function SiteDetailPage({
     refetchIntervalInBackground: false,
     retry: false,
   });
+
+  // ENV vars state
+  const [newKey, setNewKey] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const [addingEnv, setAddingEnv] = useState(false);
+  const [visibleValues, setVisibleValues] = useState<Set<string>>(new Set());
+
+  const { data: envVars = [], refetch: refetchEnv } = useQuery<EnvVarItem[]>({
+    queryKey: ["env", id],
+    queryFn: () => fetchEnvVars(id),
+    enabled: hasRepo,
+    retry: false,
+  });
+
+  async function handleUpsertEnv(e: React.FormEvent) {
+    e.preventDefault();
+    const key = newKey.trim().toUpperCase();
+    if (!key) return;
+    try {
+      await upsertEnvVar(id, key, newValue);
+      toast.success(`${key} saved`);
+      setNewKey("");
+      setNewValue("");
+      setAddingEnv(false);
+      refetchEnv();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
+  async function handleDeleteEnv(key: string) {
+    try {
+      await deleteEnvVar(id, key);
+      toast.success(`${key} deleted`);
+      refetchEnv();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  function toggleVisible(key: string) {
+    setVisibleValues((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   async function handleRestart() {
     setRestarting(true);
@@ -392,6 +448,94 @@ export default function SiteDetailPage({
             )}
             {sslInfo.status === "no_cert" && (
               <p className="text-muted-foreground">No certificate found on this server.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ENV Variables — only for git-deployed sites */}
+      {hasRepo && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <KeyRound className="h-4 w-4 text-muted-foreground" />
+              Environment Variables
+            </CardTitle>
+            {canWrite && (
+              <Button variant="outline" size="sm" onClick={() => setAddingEnv((v) => !v)}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Add
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {canWrite && addingEnv && (
+              <form onSubmit={handleUpsertEnv} className="flex items-end gap-2 pb-2 border-b">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-muted-foreground">Key</label>
+                  <input
+                    className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    placeholder="DATABASE_URL"
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value.toUpperCase())}
+                    pattern="[A-Z_][A-Z0-9_]*"
+                    required
+                  />
+                </div>
+                <div className="flex-[2] space-y-1">
+                  <label className="text-xs text-muted-foreground">Value</label>
+                  <input
+                    className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    placeholder="postgres://..."
+                    value={newValue}
+                    onChange={(e) => setNewValue(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" size="sm">Save</Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setAddingEnv(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </form>
+            )}
+
+            {envVars.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No environment variables set.</p>
+            ) : (
+              <div className="divide-y text-sm">
+                {envVars.map((v) => (
+                  <div key={v.key} className="flex items-center gap-3 py-2">
+                    <code className="font-mono font-semibold w-40 shrink-0 truncate">{v.key}</code>
+                    <code className="font-mono text-muted-foreground flex-1 truncate">
+                      {visibleValues.has(v.key) ? v.value : "••••••••"}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => toggleVisible(v.key)}
+                      className="text-muted-foreground hover:text-foreground"
+                      title={visibleValues.has(v.key) ? "Hide" : "Reveal"}
+                    >
+                      {visibleValues.has(v.key)
+                        ? <EyeOff className="h-3.5 w-3.5" />
+                        : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEnv(v.key)}
+                        className="text-muted-foreground hover:text-destructive"
+                        title="Delete"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {envVars.length > 0 && (
+              <p className="text-xs text-muted-foreground pt-1">
+                Changes take effect on next Deploy or Restart.
+              </p>
             )}
           </CardContent>
         </Card>

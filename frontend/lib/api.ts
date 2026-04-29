@@ -395,3 +395,25 @@ export async function fetchContainerLogs(id: string, tail = 100): Promise<string
 export async function restartContainer(id: string): Promise<void> {
   await apiFetch(`/sites/${id}/container/restart`, { method: "POST" });
 }
+
+export interface EnvVarItem {
+  key: string;
+  value: string;
+  updated_at: string;
+}
+
+export async function fetchEnvVars(siteID: string): Promise<EnvVarItem[]> {
+  const data = await apiFetch<{ items: EnvVarItem[] }>(`/sites/${siteID}/env`);
+  return data.items ?? [];
+}
+
+export async function upsertEnvVar(siteID: string, key: string, value: string): Promise<void> {
+  await apiFetch(`/sites/${siteID}/env`, {
+    method: "PUT",
+    body: JSON.stringify({ key, value }),
+  });
+}
+
+export async function deleteEnvVar(siteID: string, key: string): Promise<void> {
+  await apiFetch(`/sites/${siteID}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
+}
