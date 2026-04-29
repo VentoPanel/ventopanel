@@ -139,7 +139,9 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 
 	if err := lifecycle.EnsureSiteTransition(site.Status, "deploying"); err != nil {
 		finishLog("failed", "ERROR: "+err.Error())
-		return err
+		// Wrap with SkipRetry so Asynq stops retrying — the site is already
+		// in a state that cannot transition to deploying (e.g. ssl_pending).
+		return fmt.Errorf("%w: %w", asynq.SkipRetry, err)
 	}
 	prev := site.Status
 	site.Status = "deploying"

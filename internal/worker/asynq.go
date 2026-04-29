@@ -49,6 +49,11 @@ func NewMux(
 
 		if err := deployService.ExecuteDeploy(ctx, payload); err != nil {
 			logger.Error().Str("site_id", payload.SiteID).Err(err).Msg("deploy task failed")
+			// Don't retry on invalid lifecycle transitions — the site is already
+			// in a terminal state (e.g. ssl_pending → deploying is not allowed).
+			if errors.Is(err, asynq.SkipRetry) {
+				return err
+			}
 			_ = alertService.NotifyAll(ctx, fmt.Sprintf(
 				"🚨 <b>Site deploy FAILED</b>\n"+
 					"Site: <code>%s</code>\n"+
