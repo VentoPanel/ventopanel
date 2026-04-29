@@ -32,6 +32,10 @@ func templateByID(id string) *tmplcatalog.Template {
 
 const TaskDeploySite = "deploy:site"
 
+type siteDomainRepo interface {
+	List(ctx context.Context, siteID string) ([]string, error)
+}
+
 type Service struct {
 	siteRepo   domain.SiteRepository
 	serverRepo domain.ServerRepository
@@ -44,6 +48,7 @@ type Service struct {
 	audit      auditdomain.StatusEventWriter
 	taskLogs   tasklog.Repository
 	envRepo    *pgrepo.EnvRepository
+	domainRepo siteDomainRepo
 	notifier   deployNotifier
 	settings   deploySettings
 }
@@ -90,6 +95,7 @@ func NewService(
 	audit auditdomain.StatusEventWriter,
 	taskLogs tasklog.Repository,
 	envRepo *pgrepo.EnvRepository,
+	domainRepo siteDomainRepo,
 	notifier deployNotifier,
 	settings deploySettings,
 ) *Service {
@@ -105,6 +111,7 @@ func NewService(
 		audit:      audit,
 		taskLogs:   taskLogs,
 		envRepo:    envRepo,
+		domainRepo: domainRepo,
 		notifier:   notifier,
 		settings:   settings,
 	}
@@ -224,7 +231,9 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		}
 		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, branch, appPort, envFlags, tmplDockerfileB64)
 		scriptB64 := base64.StdEncoding.EncodeToString([]byte(script))
-		nginxContent := nginxProxyTemplate(site.Domain, appPort)
+		// Include alias domains in the nginx server_name directive.
+		aliasDomains, _ := s.listAliasDomains(ctx, site.ID)
+		nginxContent := nginxProxyTemplate(site.Domain, aliasDomains, appPort)
 		nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
 
 		commands = []struct{ name, cmd string }{
@@ -279,6 +288,13 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		return deployErr
 	}
 
+	// Issue SSL certs for all alias domains (best-effort; failures don't block deploy).
+	for _, alias := range s.listAliasDomains2(ctx, site.ID) {
+		if alias != site.Domain {
+			appendOutput("ssl_alias_"+alias, "", s.ssl.IssueCertificate(ctx, *server, alias))
+		}
+	}
+
 	if err := s.ssl.IssueCertificate(ctx, *server, site.Domain); err != nil {
 		appendOutput("ssl_issue", "", err)
 		if transitionErr := lifecycle.EnsureSiteTransition(site.Status, "ssl_pending"); transitionErr != nil {
@@ -315,6 +331,20 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 	s.sendDeployNotify(ctx, site.Name, true, "")
 	finishLog("success", "")
 	return nil
+}
+
+// listAliasDomains returns alias domains for a site, silently ignoring errors.
+func (s *Service) listAliasDomains(ctx context.Context, siteID string) ([]string, error) {
+	if s.domainRepo == nil {
+		return nil, nil
+	}
+	return s.domainRepo.List(ctx, siteID)
+}
+
+// listAliasDomains2 is like listAliasDomains but swallows the error for call sites that don't need it.
+func (s *Service) listAliasDomains2(ctx context.Context, siteID string) []string {
+	domains, _ := s.listAliasDomains(ctx, siteID)
+	return domains
 }
 
 // sendDeployNotify fires a Telegram/WhatsApp message when deploy notifications are enabled.
@@ -780,7 +810,14 @@ echo "==> Done."
 }
 
 // nginxProxyTemplate proxies requests to a Docker container on appPort.
-func nginxProxyTemplate(domain string, appPort int) string {
+// extraDomains are alias domains included in the server_name directive.
+func nginxProxyTemplate(domain string, extraDomains []string, appPort int) string {
+	serverName := domain
+	for _, d := range extraDomains {
+		if d != "" && d != domain {
+			serverName += " " + d
+		}
+	}
 	return fmt.Sprintf(`server {
     listen 80;
     server_name %s;
@@ -795,7 +832,7 @@ func nginxProxyTemplate(domain string, appPort int) string {
         proxy_read_timeout 60s;
     }
 }
-`, domain, appPort)
+`, serverName, appPort)
 }
 
 // staticHTML returns a minimal HTML landing page for the deployed site.

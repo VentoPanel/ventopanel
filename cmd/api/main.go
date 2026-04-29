@@ -77,6 +77,7 @@ func main() {
 
 	serverRepo := postgresrepo.NewServerRepository(pgPool, encryptor)
 	siteRepo := postgresrepo.NewSiteRepository(pgPool)
+	siteDomainRepo := postgresrepo.NewSiteDomainRepository(pgPool)
 	envRepo := postgresrepo.NewEnvRepository(pgPool, encryptor)
 	uptimeRepo := postgresrepo.NewUptimeRepository(pgPool)
 	teamRepo := postgresrepo.NewTeamRepository(pgPool)
@@ -118,13 +119,13 @@ func main() {
 	sslService := sslsvc.NewService(siteRepo, serverRepo, sslManager, asynqClient, lockManager, statusEventRepo).WithSSH(sshExecutor)
 	// Alert service reads config dynamically from DB on every send — no static notifiers needed.
 	alertService := alertsvc.NewService().WithSettingsRepo(settingsRepo)
-	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo, alertService, settingsRepo)
+	deployService := deploysvc.NewService(siteRepo, serverRepo, sshExecutor, firewallManager, sslManager, sslService, asynqClient, lockManager, statusEventRepo, taskLogRepo, envRepo, siteDomainRepo, alertService, settingsRepo)
 	provisionService := provisionsvc.NewService(serverRepo, sshExecutor, asynqClient, lockManager, statusEventRepo)
 	uptimeService := uptimesvc.NewService(siteRepo, uptimeRepo, alertService, settingsRepo)
 	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
 	dashboardRepo := postgresrepo.NewDashboardRepository(pgPool)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -138,7 +139,7 @@ func main() {
 	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
 	startSSLRenewScheduler(schedulerCtx, logger, sslService)
 	startUptimeScheduler(schedulerCtx, logger, uptimeService)
-	startBackupScheduler(schedulerCtx, logger, backupService, alertService)
+	startBackupScheduler(schedulerCtx, logger, backupService, alertService, settingsRepo)
 
 	go func() {
 		logger.Info().Str("addr", httpServer.Addr).Str("env", cfg.AppEnv).Msg("starting http server")
@@ -177,6 +178,7 @@ func buildRouter(
 	uptimeRepo *postgresrepo.UptimeRepository,
 	backupService *backupsvc.Service,
 	dashboardRepo *postgresrepo.DashboardRepository,
+	siteDomainRepo *postgresrepo.SiteDomainRepository,
 ) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -210,8 +212,9 @@ func buildRouter(
 	backupHandler := httptransport.NewBackupHandler(backupService)
 	dashboardHandler := httptransport.NewDashboardHandler(dashboardRepo)
 	templateHandler := httptransport.NewTemplateHandler()
+	siteDomainHandler := httptransport.NewSiteDomainHandler(siteDomainRepo, teamService)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler)
 
 	return engine
 }
@@ -220,15 +223,19 @@ type alertNotifier interface {
 	NotifyAll(ctx context.Context, message string) error
 }
 
-func startBackupScheduler(ctx context.Context, logger ilogger.Logger, svc *backupsvc.Service, notifier alertNotifier) {
+type backupSettingsReader interface {
+	GetBackupConfig(ctx context.Context) (settingsdomain.BackupConfig, error)
+}
+
+func startBackupScheduler(ctx context.Context, logger ilogger.Logger, svc *backupsvc.Service, notifier alertNotifier, settings backupSettingsReader) {
 	go func() {
-		// First backup 5 min after startup to verify the setup.
+		// First check 5 min after startup.
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(5 * time.Minute):
 		}
-		runBackup(ctx, logger, svc, notifier)
+		runBackupIfEnabled(ctx, logger, svc, notifier, settings)
 
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
@@ -237,19 +244,33 @@ func startBackupScheduler(ctx context.Context, logger ilogger.Logger, svc *backu
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				runBackup(ctx, logger, svc, notifier)
+				runBackupIfEnabled(ctx, logger, svc, notifier, settings)
 			}
 		}
 	}()
 	logger.Info().Msg("backup scheduler started (interval: 24h)")
 }
 
-func runBackup(ctx context.Context, logger ilogger.Logger, svc *backupsvc.Service, notifier alertNotifier) {
+func runBackupIfEnabled(ctx context.Context, logger ilogger.Logger, svc *backupsvc.Service, notifier alertNotifier, settings backupSettingsReader) {
+	cfg, err := settings.GetBackupConfig(ctx)
+	if err != nil {
+		logger.Warn().Err(err).Msg("could not read backup settings — skipping scheduled backup")
+		return
+	}
+	if !cfg.AutoEnabled {
+		logger.Debug().Msg("scheduled backup skipped — auto_enabled=false")
+		return
+	}
+	// Apply retention count from settings.
+	svc.SetKeepCount(cfg.RetentionCount)
 	if err := svc.Run(ctx); err != nil {
 		logger.Error().Err(err).Msg("scheduled backup failed")
 		_ = notifier.NotifyAll(ctx, "⚠️ VentoPanel backup FAILED\n"+err.Error())
 	} else {
 		logger.Info().Msg("scheduled backup completed")
+		if cfg.NotifySuccess {
+			_ = notifier.NotifyAll(ctx, "✅ VentoPanel scheduled backup completed successfully")
+		}
 	}
 }
 

@@ -667,3 +667,42 @@ export async function fetchTemplates(): Promise<SiteTemplate[]> {
 export async function fetchTemplateByID(id: string): Promise<SiteTemplate> {
   return apiFetch<SiteTemplate>(`/templates/${id}`);
 }
+
+// ── Site Alias Domains ────────────────────────────────────────────────────────
+
+export async function fetchSiteDomains(siteID: string): Promise<string[]> {
+  const data = await apiFetch<{ items: string[] }>(`/sites/${siteID}/domains`);
+  return data.items ?? [];
+}
+
+export async function addSiteDomain(siteID: string, domain: string): Promise<void> {
+  await apiFetch(`/sites/${siteID}/domains`, {
+    method: "POST",
+    body: JSON.stringify({ domain }),
+  });
+}
+
+export async function removeSiteDomain(siteID: string, domain: string): Promise<void> {
+  await apiFetch(`/sites/${siteID}/domains/${encodeURIComponent(domain)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Backup Settings ───────────────────────────────────────────────────────────
+
+export interface BackupSettings {
+  auto_enabled: boolean;
+  retention_count: number;
+  notify_success: boolean;
+}
+
+export async function fetchBackupSettings(): Promise<BackupSettings> {
+  return apiFetch<BackupSettings>("/settings/backup");
+}
+
+export async function updateBackupSettings(s: Partial<BackupSettings>): Promise<void> {
+  await apiFetch("/settings/backup", {
+    method: "PATCH",
+    body: JSON.stringify(s),
+  });
+}

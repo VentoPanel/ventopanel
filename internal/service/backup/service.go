@@ -58,6 +58,13 @@ func NewService(db *pgxpool.Pool, dir string, keepCount int, notifier notifier) 
 	return &Service{db: db, dir: dir, keepCount: keepCount, notifier: notifier}
 }
 
+// SetKeepCount updates the retention count (number of backups to keep).
+func (s *Service) SetKeepCount(n int) {
+	if n > 0 {
+		s.keepCount = n
+	}
+}
+
 // Run creates one .tar.gz backup and prunes excess archives.
 func (s *Service) Run(ctx context.Context) error {
 	if err := os.MkdirAll(s.dir, 0o750); err != nil {

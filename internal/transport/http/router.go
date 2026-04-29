@@ -21,6 +21,7 @@ func RegisterRoutes(
 	backupHandler *BackupHandler,
 	dashboardHandler *DashboardHandler,
 	templateHandler *TemplateHandler,
+	siteDomainHandler *SiteDomainHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -76,8 +77,13 @@ func RegisterRoutes(
 		// Both paths resolve to the same handler for backward compatibility.
 		api.GET("/audit", auditHandler.ListStatusEvents)
 		api.GET("/audit/status-events", auditHandler.ListStatusEvents)
+		api.GET("/sites/:id/domains", siteDomainHandler.ListDomains)
+		api.POST("/sites/:id/domains", siteDomainHandler.AddDomain)
+		api.DELETE("/sites/:id/domains/:domain", siteDomainHandler.RemoveDomain)
 		api.GET("/settings/notifications", settingsHandler.GetNotifications)
 		api.PATCH("/settings/notifications", settingsHandler.UpdateNotifications)
+		api.GET("/settings/backup", settingsHandler.GetBackupSettings)
+		api.PATCH("/settings/backup", settingsHandler.UpdateBackupSettings)
 		api.GET("/users", userHandler.List)
 		api.PATCH("/users/:id/role", userHandler.UpdateRole)
 		api.DELETE("/users/:id", userHandler.Delete)

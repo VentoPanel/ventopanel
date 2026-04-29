@@ -124,6 +124,64 @@ func (r *SettingsRepository) SetNotificationConfig(ctx context.Context, cfg sett
 	return tx.Commit(ctx)
 }
 
+func (r *SettingsRepository) GetBackupConfig(ctx context.Context) (settings.BackupConfig, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT key, value FROM app_settings WHERE key IN ($1, $2, $3)`,
+		settings.KeyBackupAutoEnabled,
+		settings.KeyBackupRetentionCount,
+		settings.KeyBackupNotifySuccess,
+	)
+	if err != nil {
+		return settings.BackupConfig{}, err
+	}
+	defer rows.Close()
+
+	cfg := settings.BackupConfig{
+		AutoEnabled:    true,
+		RetentionCount: 7,
+		NotifySuccess:  false,
+	}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return cfg, err
+		}
+		switch k {
+		case settings.KeyBackupAutoEnabled:
+			cfg.AutoEnabled = settings.ParseBool(v, true)
+		case settings.KeyBackupRetentionCount:
+			cfg.RetentionCount = settings.ParseIntBounded(v, 7, 1, 30)
+		case settings.KeyBackupNotifySuccess:
+			cfg.NotifySuccess = settings.ParseBool(v, false)
+		}
+	}
+	return cfg, rows.Err()
+}
+
+func (r *SettingsRepository) SetBackupConfig(ctx context.Context, cfg settings.BackupConfig) error {
+	pairs := [][2]string{
+		{settings.KeyBackupAutoEnabled, formatBool(cfg.AutoEnabled)},
+		{settings.KeyBackupRetentionCount, strconv.Itoa(settings.ClampInt(cfg.RetentionCount, 1, 30))},
+		{settings.KeyBackupNotifySuccess, formatBool(cfg.NotifySuccess)},
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	for _, kv := range pairs {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app_settings (key, value, updated_at)
+			VALUES ($1, $2, NOW())
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+			kv[0], kv[1],
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
 func formatBool(b bool) string {
 	if b {
 		return "true"

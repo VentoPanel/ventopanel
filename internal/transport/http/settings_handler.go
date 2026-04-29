@@ -149,3 +149,55 @@ func max(a, b int) int {
 	}
 	return b
 }
+
+// GetBackupSettings handles GET /settings/backup
+func (h *SettingsHandler) GetBackupSettings(c *gin.Context) {
+	if !h.requireAdmin(c) {
+		return
+	}
+	cfg, err := h.repo.GetBackupConfig(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"auto_enabled":    cfg.AutoEnabled,
+		"retention_count": cfg.RetentionCount,
+		"notify_success":  cfg.NotifySuccess,
+	})
+}
+
+// UpdateBackupSettings handles PATCH /settings/backup
+func (h *SettingsHandler) UpdateBackupSettings(c *gin.Context) {
+	if !h.requireAdmin(c) {
+		return
+	}
+	var req struct {
+		AutoEnabled    *bool `json:"auto_enabled"`
+		RetentionCount *int  `json:"retention_count"`
+		NotifySuccess  *bool `json:"notify_success"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	existing, err := h.repo.GetBackupConfig(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	if req.AutoEnabled != nil {
+		existing.AutoEnabled = *req.AutoEnabled
+	}
+	if req.RetentionCount != nil {
+		existing.RetentionCount = settingsdomain.ClampInt(*req.RetentionCount, 1, 30)
+	}
+	if req.NotifySuccess != nil {
+		existing.NotifySuccess = *req.NotifySuccess
+	}
+	if err := h.repo.SetBackupConfig(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}

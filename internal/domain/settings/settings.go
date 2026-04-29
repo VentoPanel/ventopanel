@@ -12,7 +12,18 @@ const (
 	KeyUptimeRecoveryThreshold = "uptime_recovery_threshold"
 	KeyDeployNotifySuccess     = "deploy_notify_success"
 	KeyDeployNotifyFailure     = "deploy_notify_failure"
+	// Backup schedule settings
+	KeyBackupAutoEnabled    = "backup_auto_enabled"
+	KeyBackupRetentionCount = "backup_retention_count"
+	KeyBackupNotifySuccess  = "backup_notify_success"
 )
+
+// BackupConfig holds scheduled-backup preferences.
+type BackupConfig struct {
+	AutoEnabled    bool
+	RetentionCount int  // number of archives to keep (default 7)
+	NotifySuccess  bool // send notification on successful backup
+}
 
 // NotificationConfig holds all notification credentials.
 type NotificationConfig struct {
@@ -36,4 +47,6 @@ type Repository interface {
 	Set(ctx context.Context, key, value string) error
 	GetNotificationConfig(ctx context.Context) (NotificationConfig, error)
 	SetNotificationConfig(ctx context.Context, cfg NotificationConfig) error
+	GetBackupConfig(ctx context.Context) (BackupConfig, error)
+	SetBackupConfig(ctx context.Context, cfg BackupConfig) error
 }

@@ -35,6 +35,7 @@ import {
   GitBranch,
   Layers,
   AlertTriangle,
+  Globe2,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -53,6 +54,9 @@ import {
   fetchCommits,
   rollbackToCommit,
   getLogStreamUrl,
+  fetchSiteDomains,
+  addSiteDomain,
+  removeSiteDomain,
   type SSLCertInfo,
   type ContainerInfo,
   type EnvVarItem,
@@ -340,6 +344,40 @@ export default function SiteDetailPage({
   const [webhookToken, setWebhookToken] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+
+  // Alias domains state
+  const [newAlias, setNewAlias] = useState("");
+  const [addingAlias, setAddingAlias] = useState(false);
+  const { data: aliasDomains = [], refetch: refetchDomains } = useQuery<string[]>({
+    queryKey: ["site-domains", id],
+    queryFn: () => fetchSiteDomains(id),
+    staleTime: 60_000,
+  });
+
+  async function handleAddAlias(e: React.FormEvent) {
+    e.preventDefault();
+    const domain = newAlias.trim().toLowerCase();
+    if (!domain) return;
+    try {
+      await addSiteDomain(id, domain);
+      setNewAlias("");
+      setAddingAlias(false);
+      refetchDomains();
+      toast.success(`${domain} added — redeploy the site to apply`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add domain");
+    }
+  }
+
+  async function handleRemoveAlias(domain: string) {
+    try {
+      await removeSiteDomain(id, domain);
+      refetchDomains();
+      toast.success(`${domain} removed — redeploy to apply`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove domain");
+    }
+  }
 
   // Sync webhook token from site data
   const currentToken = webhookToken || site?.WebhookToken || "";
@@ -796,6 +834,76 @@ export default function SiteDetailPage({
           </CardContent>
         </Card>
       )}
+
+      {/* Alias Domains */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <Globe2 className="h-4 w-4 text-muted-foreground" />
+            Alias Domains
+          </CardTitle>
+          {canWrite && (
+            <Button variant="outline" size="sm" onClick={() => setAddingAlias((v) => !v)}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Add
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {canWrite && addingAlias && (
+            <form onSubmit={handleAddAlias} className="flex items-center gap-2 pb-2 border-b">
+              <input
+                className="flex h-8 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="alias.example.com"
+                value={newAlias}
+                onChange={(e) => setNewAlias(e.target.value)}
+                autoFocus
+              />
+              <Button type="submit" size="sm">Add</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setAddingAlias(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </form>
+          )}
+          {aliasDomains.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No alias domains — all traffic goes to <code className="bg-muted px-1 rounded text-xs">{site?.Domain}</code>.
+            </p>
+          ) : (
+            <div className="divide-y text-sm">
+              {aliasDomains.map((d) => (
+                <div key={d} className="flex items-center justify-between py-2">
+                  <a
+                    href={`https://${d}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-sm hover:underline flex items-center gap-1"
+                  >
+                    {d}
+                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                  </a>
+                  {canWrite && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAlias(d)}
+                      className="text-muted-foreground hover:text-destructive"
+                      title="Remove alias"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {aliasDomains.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Alias domains are included in the nginx config on the next Deploy.
+              SSL is issued per domain automatically.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Container status — always visible */}
       <Card>
