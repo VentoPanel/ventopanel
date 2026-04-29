@@ -128,7 +128,10 @@ export function SiteForm({ open, onOpenChange, site }: SiteFormProps) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="si-runtime">Runtime</Label>
+              <Label htmlFor="si-runtime">
+                Runtime{" "}
+                <span className="text-xs text-muted-foreground font-normal">(display only)</span>
+              </Label>
               <select
                 id="si-runtime"
                 value={form.runtime}
@@ -150,6 +153,9 @@ export function SiteForm({ open, onOpenChange, site }: SiteFormProps) {
                 value={form.repository_url}
                 onChange={(e) => set("repository_url", e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Runtime auto-detected from repo files
+              </p>
             </div>
           </div>
 

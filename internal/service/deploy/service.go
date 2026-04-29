@@ -267,6 +267,86 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 	return nil
 }
 
+// ContainerInfo holds live runtime data for a site's Docker container.
+type ContainerInfo struct {
+	Status    string `json:"status"`      // running | exited | not_found | no_container
+	StartedAt string `json:"started_at"`
+	CPUPerc   string `json:"cpu_percent"`
+	MemUsage  string `json:"mem_usage"`
+}
+
+// GetContainerInfo returns live Docker container stats for a git-deployed site.
+func (s *Service) GetContainerInfo(ctx context.Context, siteID string) (*ContainerInfo, error) {
+	site, err := s.siteRepo.GetByID(ctx, siteID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(site.RepositoryURL) == "" {
+		return &ContainerInfo{Status: "no_container"}, nil
+	}
+	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
+	if err != nil {
+		return nil, err
+	}
+
+	name := fmt.Sprintf("ventopanel_%s", siteID)
+	cmd := fmt.Sprintf(
+		`sh -c 'I=$(docker inspect --format "{{.State.Status}}|{{.State.StartedAt}}" %s 2>/dev/null) && T=$(docker stats --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}" %s 2>/dev/null) && printf "%%s|%%s\n" "$I" "$T" || echo "not_found|||"'`,
+		name, name,
+	)
+	out, _ := s.ssh.RunOutput(ctx, *server, cmd)
+	out = strings.TrimSpace(out)
+	parts := strings.SplitN(out, "|", 4)
+	for len(parts) < 4 {
+		parts = append(parts, "")
+	}
+	return &ContainerInfo{
+		Status:    parts[0],
+		StartedAt: parts[1],
+		CPUPerc:   parts[2],
+		MemUsage:  parts[3],
+	}, nil
+}
+
+// GetContainerLogs returns the last n lines of Docker container logs.
+func (s *Service) GetContainerLogs(ctx context.Context, siteID string, tail int) (string, error) {
+	site, err := s.siteRepo.GetByID(ctx, siteID)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(site.RepositoryURL) == "" {
+		return "(static site — no container)", nil
+	}
+	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
+	if err != nil {
+		return "", err
+	}
+	if tail <= 0 {
+		tail = 100
+	}
+	cmd := fmt.Sprintf("docker logs --tail %d ventopanel_%s 2>&1", tail, siteID)
+	out, _ := s.ssh.RunOutput(ctx, *server, cmd)
+	return out, nil
+}
+
+// RestartContainer issues docker restart for a site's container.
+func (s *Service) RestartContainer(ctx context.Context, siteID string) error {
+	site, err := s.siteRepo.GetByID(ctx, siteID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(site.RepositoryURL) == "" {
+		return fmt.Errorf("site has no container (static deploy)")
+	}
+	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
+	if err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf("docker restart ventopanel_%s", siteID)
+	_, err = s.ssh.RunOutput(ctx, *server, cmd)
+	return err
+}
+
 func (s *Service) writeAudit(resourceType, resourceID, from, to, reason, taskID string) {
 	if s.audit == nil || from == to {
 		return

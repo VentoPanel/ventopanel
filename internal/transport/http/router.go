@@ -45,6 +45,9 @@ func RegisterRoutes(
 		api.GET("/sites/:id/ssl", siteHandler.GetSSLInfo)
 		api.POST("/sites/:id/ssl/renew", siteHandler.RenewSSL)
 		api.GET("/sites/:id/logs", siteHandler.GetLogs)
+		api.GET("/sites/:id/container", siteHandler.GetContainerInfo)
+		api.GET("/sites/:id/container/logs", siteHandler.GetContainerLogs)
+		api.POST("/sites/:id/container/restart", siteHandler.RestartContainer)
 		api.GET("/teams/access", teamHandler.List)
 		api.GET("/observability/ssl", observabilityHandler.SSL)
 		// Both paths resolve to the same handler for backward compatibility.

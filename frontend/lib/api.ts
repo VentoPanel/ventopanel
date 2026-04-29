@@ -375,3 +375,23 @@ export async function fetchSiteLogs(id: string, limit = 20): Promise<TaskLog[]> 
   const data = await apiFetch<{ items: TaskLog[] }>(`/sites/${id}/logs?limit=${limit}`);
   return data.items ?? [];
 }
+
+export interface ContainerInfo {
+  status: string;       // running | exited | not_found | no_container
+  started_at: string;
+  cpu_percent: string;
+  mem_usage: string;
+}
+
+export async function fetchContainerInfo(id: string): Promise<ContainerInfo> {
+  return apiFetch<ContainerInfo>(`/sites/${id}/container`);
+}
+
+export async function fetchContainerLogs(id: string, tail = 100): Promise<string> {
+  const data = await apiFetch<{ logs: string }>(`/sites/${id}/container/logs?tail=${tail}`);
+  return data.logs ?? "";
+}
+
+export async function restartContainer(id: string): Promise<void> {
+  await apiFetch(`/sites/${id}/container/restart`, { method: "POST" });
+}

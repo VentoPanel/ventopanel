@@ -16,6 +16,9 @@ import {
   ShieldAlert,
   ShieldX,
   RefreshCw,
+  Container,
+  RotateCcw,
+  Terminal,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -24,8 +27,12 @@ import {
   fetchSiteLogs,
   fetchSiteSSL,
   renewSiteSSL,
+  fetchContainerInfo,
+  fetchContainerLogs,
+  restartContainer,
   type TaskLog,
   type SSLCertInfo,
+  type ContainerInfo,
 } from "@/lib/api";
 import { useAuditEvents } from "@/hooks/use-audit";
 import { useDeploySite, useDeleteSite } from "@/hooks/use-site-mutations";
@@ -135,6 +142,41 @@ export default function SiteDetailPage({
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [showContainerLogs, setShowContainerLogs] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  const hasRepo = Boolean(site?.RepositoryURL?.trim());
+
+  const { data: containerInfo, refetch: refetchContainer } = useQuery<ContainerInfo>({
+    queryKey: ["container", id],
+    queryFn: () => fetchContainerInfo(id),
+    enabled: hasRepo,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
+
+  const { data: containerLogs = "", isFetching: containerLogsFetching } = useQuery<string>({
+    queryKey: ["container-logs", id],
+    queryFn: () => fetchContainerLogs(id, 200),
+    enabled: hasRepo && showContainerLogs,
+    refetchInterval: showContainerLogs ? 10_000 : false,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
+
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      await restartContainer(id);
+      toast.success("Container restarted");
+      setTimeout(() => refetchContainer(), 2000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Restart failed");
+    } finally {
+      setRestarting(false);
+    }
+  }
 
   async function handleDeploy() {
     try {
@@ -350,6 +392,97 @@ export default function SiteDetailPage({
             )}
             {sslInfo.status === "no_cert" && (
               <p className="text-muted-foreground">No certificate found on this server.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Container status — only for git-deployed sites */}
+      {hasRepo && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <Container className="h-4 w-4 text-muted-foreground" />
+              Docker Container
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={() => setShowContainerLogs((v) => !v)}
+              >
+                <Terminal className="mr-1.5 h-3.5 w-3.5" />
+                {showContainerLogs ? "Hide Logs" : "Show Logs"}
+              </Button>
+              {canWrite && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={restarting || containerInfo?.status !== "running"}
+                  onClick={handleRestart}
+                >
+                  <RotateCcw className={cn("mr-1.5 h-3.5 w-3.5", restarting && "animate-spin")} />
+                  Restart
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!containerInfo ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : containerInfo.status === "no_container" ? (
+              <p className="text-sm text-muted-foreground">Static site — no container.</p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-6 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <span className={cn(
+                    "inline-block font-semibold capitalize",
+                    containerInfo.status === "running" && "text-green-700",
+                    containerInfo.status === "exited" && "text-red-600",
+                    containerInfo.status === "not_found" && "text-muted-foreground",
+                  )}>
+                    {containerInfo.status === "not_found" ? "not found" : containerInfo.status}
+                  </span>
+                </div>
+                {containerInfo.cpu_percent && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">CPU</p>
+                    <p className="font-medium">{containerInfo.cpu_percent}</p>
+                  </div>
+                )}
+                {containerInfo.mem_usage && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Memory</p>
+                    <p className="font-medium">{containerInfo.mem_usage}</p>
+                  </div>
+                )}
+                {containerInfo.started_at && containerInfo.status === "running" && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Uptime</p>
+                    <p className="font-medium">
+                      {formatDistanceToNow(new Date(containerInfo.started_at), { addSuffix: false })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {showContainerLogs && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Container Logs
+                  </p>
+                  {containerLogsFetching && (
+                    <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+                <pre className="rounded-md bg-muted/60 border p-3 text-xs font-mono overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap">
+                  {containerLogs || "(no output)"}
+                </pre>
+              </div>
             )}
           </CardContent>
         </Card>

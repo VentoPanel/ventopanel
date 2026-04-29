@@ -323,3 +323,47 @@ func (h *SiteHandler) GetLogs(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"items": logs})
 }
+
+func (h *SiteHandler) GetContainerInfo(c *gin.Context) {
+	id := c.Param("id")
+	if !h.authorizeSite(c, id, false) {
+		return
+	}
+	info, err := h.deployService.GetContainerInfo(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, info)
+}
+
+func (h *SiteHandler) GetContainerLogs(c *gin.Context) {
+	id := c.Param("id")
+	if !h.authorizeSite(c, id, false) {
+		return
+	}
+	tail := 100
+	if v := c.Query("tail"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			tail = n
+		}
+	}
+	out, err := h.deployService.GetContainerLogs(c.Request.Context(), id, tail)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"logs": out})
+}
+
+func (h *SiteHandler) RestartContainer(c *gin.Context) {
+	id := c.Param("id")
+	if !h.authorizeSite(c, id, true) {
+		return
+	}
+	if err := h.deployService.RestartContainer(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
