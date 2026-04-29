@@ -221,13 +221,14 @@ func (s *Service) parseMFASession(tokenStr string) (jwt.MapClaims, error) {
 func (s *Service) issueToken(u *domain.User) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"uid":     u.ID,
-		"tid":     u.TeamID,
-		"role":    u.Role,
-		"email":   u.Email,
-		"iat":     now.Unix(),
-		"nbf":     now.Unix(),
-		"exp":     now.Add(s.tokenTTL).Unix(),
+		"uid":          u.ID,
+		"tid":          u.TeamID,
+		"role":         u.Role,
+		"email":        u.Email,
+		"totp_enabled": u.TOTPEnabled,
+		"iat":          now.Unix(),
+		"nbf":          now.Unix(),
+		"exp":          now.Add(s.tokenTTL).Unix(),
 	}
 	if s.jwtIssuer != "" {
 		claims["iss"] = s.jwtIssuer

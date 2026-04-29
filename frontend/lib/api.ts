@@ -30,6 +30,7 @@ export interface TokenPayload {
   tid?: string;
   role?: string;
   email?: string;
+  totp_enabled?: boolean;
   exp?: number;
 }
 

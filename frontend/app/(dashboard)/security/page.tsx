@@ -231,13 +231,12 @@ type TOTPStep = "idle" | "setup" | "verify" | "disable";
 
 function TwoFactorSection() {
   const payload = getTokenPayload();
-  // We detect 2FA status via the token payload — if the server returns totp_enabled
-  // in the JWT we can read it here. For now we track it via local state after actions.
   const [step, setStep] = useState<TOTPStep>("idle");
   const [setup, setSetup] = useState<TOTPSetup | null>(null);
   const [code, setCode] = useState("");
   const [showSecret, setShowSecret] = useState(false);
-  const [enabled, setEnabled] = useState(false); // optimistic after enable/disable
+  // Read current 2FA status from JWT token payload.
+  const [enabled, setEnabled] = useState<boolean>(payload?.totp_enabled ?? false);
 
   const setupMutation = useMutation({
     mutationFn: setupTOTP,
