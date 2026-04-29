@@ -68,10 +68,22 @@ export default function TerminalClient({ serverId }: Props) {
     fitRef.current  = fitAddon;
 
     // Build WebSocket URL.
+    // The Next.js HTTP proxy (route.ts) strips the "Upgrade" header and cannot handle WebSocket.
+    // We therefore connect the browser directly to the Go API.
+    //
+    // Priority:
+    //   1. NEXT_PUBLIC_API_WS_URL env var (set via docker-compose / .env) — use as-is.
+    //      e.g. "wss://panel.example.com"  (if Nginx proxies WebSocket to the API)
+    //           "ws://1.2.3.4:8080"        (direct, IP-based access)
+    //   2. Same hostname, port 8080 (works when API port is exposed to the public internet).
     const token = getToken();
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url   = `${proto}//${window.location.host}/api/v1/servers/${serverId}/terminal` +
-                  (token ? `?token=${encodeURIComponent(token)}` : "");
+    const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const envWsUrl = process.env.NEXT_PUBLIC_API_WS_URL?.trim();
+    const wsBase  = envWsUrl
+      ? envWsUrl.replace(/\/$/, "")
+      : `${wsProto}//${window.location.hostname}:8080`;
+    const url = `${wsBase}/api/v1/servers/${serverId}/terminal` +
+                (token ? `?token=${encodeURIComponent(token)}` : "");
 
     const ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";

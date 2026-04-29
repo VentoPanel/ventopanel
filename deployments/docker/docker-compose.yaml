@@ -70,6 +70,11 @@ services:
       - "3000:3000"
     environment:
       API_URL: ${API_URL:-http://api:8080}
+      # NEXT_PUBLIC_API_WS_URL is the WebSocket base the *browser* uses to reach the Go API directly.
+      # It must be reachable from the client — set to your domain/IP with port 8080 if behind Nginx.
+      # Example: NEXT_PUBLIC_API_WS_URL=wss://panel.example.com (if Nginx proxies WebSocket)
+      # Default: ws://<same host>:8080  (direct to API port, works when port 8080 is exposed)
+      NEXT_PUBLIC_API_WS_URL: ${NEXT_PUBLIC_API_WS_URL:-}
     depends_on:
       - api
 
