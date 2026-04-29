@@ -72,13 +72,14 @@ function detectLanguage(path: string): string {
 
 interface Props {
   item: FileItem;
+  serverId?: string;
   onClose: () => void;
   onSaved?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function FileEditor({ item, onClose, onSaved }: Props) {
+export function FileEditor({ item, serverId, onClose, onSaved }: Props) {
   const [content,  setContent]  = useState<string | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
@@ -91,7 +92,7 @@ export function FileEditor({ item, onClose, onSaved }: Props) {
   // Load file content.
   useEffect(() => {
     setLoading(true);
-    fmReadFile(item.path)
+    fmReadFile(item.path, serverId)
       .then((r) => { setContent(r.content); setDirty(false); })
       .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load file"))
       .finally(() => setLoading(false));
@@ -102,7 +103,7 @@ export function FileEditor({ item, onClose, onSaved }: Props) {
     const value = editorRef.current?.getValue() ?? content ?? "";
     setSaving(true);
     try {
-      await fmWriteFile(item.path, value);
+      await fmWriteFile(item.path, value, serverId);
       setDirty(false);
       toast.success("File saved");
       onSaved?.();

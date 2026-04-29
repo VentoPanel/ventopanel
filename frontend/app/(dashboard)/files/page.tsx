@@ -29,6 +29,8 @@ import {
   PackageOpen,
   Lock,
   CheckSquare,
+  Server,
+  MonitorCheck,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -40,8 +42,17 @@ import {
   fmDownloadUrl,
   fmCompress,
   fmExtract,
+  fetchServers,
   type FileItem,
+  type Server,
 } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,6 +132,7 @@ function Breadcrumbs({ path, onNavigate }: { path: string; onNavigate: (p: strin
 
 function ContextMenu({
   item,
+  serverId,
   onRename,
   onDelete,
   onEdit,
@@ -129,6 +141,7 @@ function ContextMenu({
   onPermissions,
 }: {
   item: FileItem;
+  serverId?: string;
   onRename: (item: FileItem) => void;
   onDelete: (item: FileItem) => void;
   onEdit: (item: FileItem) => void;
@@ -167,7 +180,7 @@ function ContextMenu({
             </button>
           )}
           <a
-            href={fmDownloadUrl(item.path)}
+            href={fmDownloadUrl(item.path, serverId)}
             download={item.is_dir ? item.name + ".zip" : item.name}
             className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
             onClick={() => setOpen(false)}
@@ -210,23 +223,23 @@ function ContextMenu({
 function FloatingBar({
   selected,
   currentPath,
+  serverId,
   onClearSelection,
   onCompressSelected,
   onDeleteSelected,
 }: {
   selected: FileItem[];
   currentPath: string;
+  serverId?: string;
   onClearSelection: () => void;
   onCompressSelected: (items: FileItem[]) => void;
   onDeleteSelected: (items: FileItem[]) => void;
 }) {
   if (selected.length === 0) return null;
 
-  // Build multi-file download URL: download first selected (for ZIP streaming).
-  // For multi-file we redirect to the current dir download which streams as ZIP.
   const downloadHref = selected.length === 1
-    ? fmDownloadUrl(selected[0].path)
-    : fmDownloadUrl(currentPath);
+    ? fmDownloadUrl(selected[0].path, serverId)
+    : fmDownloadUrl(currentPath, serverId);
 
   return (
     <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 animate-in slide-in-from-bottom-4 fade-in duration-200">
@@ -274,12 +287,31 @@ function FilesPageInner() {
   const searchParams = useSearchParams();
   const qc           = useQueryClient();
 
-  // Path is stored in URL ?path= so browser Back/Forward works.
+  // Both path and server_id live in the URL so Back/Forward works.
   const currentPath = searchParams.get("path") ?? "/";
-  const navigate    = useCallback(
-    (p: string) => router.push(`/files?path=${encodeURIComponent(p)}`),
-    [router],
+  const serverId    = searchParams.get("server_id") ?? "";
+
+  const navigate = useCallback(
+    (p: string, sid?: string) => {
+      const s = sid !== undefined ? sid : serverId;
+      const url = `/files?path=${encodeURIComponent(p)}` + (s ? `&server_id=${encodeURIComponent(s)}` : "");
+      router.push(url);
+    },
+    [router, serverId],
   );
+
+  // Change server → reset path to "/"
+  const handleServerChange = useCallback(
+    (sid: string) => navigate("/", sid === "__local__" ? "" : sid),
+    [navigate],
+  );
+
+  // Servers list for the selector.
+  const { data: serversData } = useQuery({
+    queryKey: ["servers"],
+    queryFn: fetchServers,
+    staleTime: 30_000,
+  });
 
   const [dragging, setDragging] = useState(false);
 
@@ -307,19 +339,21 @@ function FilesPageInner() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const queryKey = ["files", currentPath];
+  const queryKey = ["files", currentPath, serverId];
 
   const { data, isLoading, isError } = useQuery({
     queryKey,
-    queryFn: () => fmListDir(currentPath),
+    queryFn: () => fmListDir(currentPath, serverId || undefined),
   });
 
   const items = data?.items ?? [];
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
+  const sid = serverId || undefined;
+
   const deleteMutation = useMutation({
-    mutationFn: (paths: string[]) => Promise.all(paths.map(fmDelete)),
+    mutationFn: (paths: string[]) => Promise.all(paths.map((p) => fmDelete(p, sid))),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast.success("Deleted");
@@ -331,7 +365,7 @@ function FilesPageInner() {
 
   const renameMutation = useMutation({
     mutationFn: ({ old_path, new_path }: { old_path: string; new_path: string }) =>
-      fmRename(old_path, new_path),
+      fmRename(old_path, new_path, sid),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast.success("Renamed");
@@ -341,7 +375,7 @@ function FilesPageInner() {
   });
 
   const mkdirMutation = useMutation({
-    mutationFn: (name: string) => fmCreateDir(currentPath.replace(/\/$/, "") + "/" + name),
+    mutationFn: (name: string) => fmCreateDir(currentPath.replace(/\/$/, "") + "/" + name, sid),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast.success("Folder created");
@@ -353,7 +387,7 @@ function FilesPageInner() {
   const compressMutation = useMutation({
     mutationFn: ({ srcPaths, name }: { srcPaths: string[]; name: string }) => {
       const dest = currentPath.replace(/\/$/, "") + "/" + name + ".zip";
-      return fmCompress(srcPaths, dest);
+      return fmCompress(srcPaths, dest, sid);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
@@ -364,7 +398,7 @@ function FilesPageInner() {
   });
 
   const extractMutation = useMutation({
-    mutationFn: (path: string) => fmExtract(path, currentPath),
+    mutationFn: (path: string) => fmExtract(path, currentPath, sid),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); toast.success("Extracted"); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Extract failed"),
   });
@@ -375,7 +409,7 @@ function FilesPageInner() {
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      await fmUpload(currentPath, Array.from(files));
+      await fmUpload(currentPath, Array.from(files), sid);
       qc.invalidateQueries({ queryKey });
       toast.success(`Uploaded ${files.length} file(s)`);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Upload failed"); }
@@ -436,15 +470,44 @@ function FilesPageInner() {
     <div className="flex h-full flex-col gap-4">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <HardDrive className="h-6 w-6 text-muted-foreground" />
-          <div>
+          <HardDrive className="h-6 w-6 text-muted-foreground shrink-0" />
+          <div className="min-w-0">
             <h2 className="text-2xl font-bold tracking-tight">File Manager</h2>
-            <p className="text-xs text-muted-foreground font-mono">{data?.root ?? "…"}</p>
+            <p className="text-xs text-muted-foreground font-mono truncate">{data?.root ?? "…"}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* ── Server selector ── */}
+          <Select
+            value={serverId || "__local__"}
+            onValueChange={handleServerChange}
+          >
+            <SelectTrigger className="h-8 w-[180px] text-xs">
+              <Server className="mr-2 h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <SelectValue placeholder="Select server" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__local__">
+                <span className="flex items-center gap-2">
+                  <MonitorCheck className="h-3.5 w-3.5 text-green-500" />
+                  Local (panel host)
+                </span>
+              </SelectItem>
+              {serversData?.map((srv: Server) => (
+                <SelectItem key={srv.ID} value={srv.ID}>
+                  <span className="flex items-center gap-2">
+                    <Server className="h-3.5 w-3.5 text-blue-400" />
+                    {srv.Name}
+                    <span className="text-muted-foreground text-[10px]">{srv.Host}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Button variant="outline" size="sm" onClick={() => setNewDirOpen(true)}>
             <FolderPlus className="mr-2 h-4 w-4" /> New Folder
           </Button>
@@ -583,6 +646,7 @@ function FilesPageInner() {
                       <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                         <ContextMenu
                           item={item}
+                          serverId={sid}
                           onRename={(i) => { setRenameItem(i); setNewName(i.name); }}
                           onDelete={(i) => setDeleteItems([i])}
                           onEdit={setEditItem}
@@ -604,6 +668,7 @@ function FilesPageInner() {
       <FloatingBar
         selected={selectedItems}
         currentPath={currentPath}
+        serverId={sid}
         onClearSelection={() => setSelected(new Set())}
         onCompressSelected={(its) => {
           setCompressItems(its);
@@ -727,6 +792,7 @@ function FilesPageInner() {
       {editItem && (
         <FileEditor
           item={editItem}
+          serverId={sid}
           onClose={() => setEditItem(null)}
           onSaved={() => qc.invalidateQueries({ queryKey })}
         />
@@ -736,6 +802,7 @@ function FilesPageInner() {
       {permItem && (
         <PermissionsModal
           item={permItem}
+          serverId={sid}
           onClose={() => setPermItem(null)}
         />
       )}

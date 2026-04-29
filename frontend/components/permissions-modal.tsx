@@ -72,13 +72,14 @@ const PRESETS = [
 
 interface Props {
   item: FileItem;
+  serverId?: string;
   onClose: () => void;
   onSaved?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function PermissionsModal({ item, onClose, onSaved }: Props) {
+export function PermissionsModal({ item, serverId, onClose, onSaved }: Props) {
   const [state, setState] = useState<PermState>({
     owner:  { r: true,  w: true,  x: false },
     group:  { r: true,  w: false, x: false },
@@ -113,7 +114,7 @@ export function PermissionsModal({ item, onClose, onSaved }: Props) {
     if (octal.length < 3) { toast.error("Enter a valid 3-digit octal mode"); return; }
     setSaving(true);
     try {
-      await fmSetPermissions(item.path, octal);
+      await fmSetPermissions(item.path, octal, serverId);
       toast.success("Permissions updated");
       onSaved?.();
       onClose();

@@ -798,73 +798,121 @@ export interface FileItem {
   ext: string;
 }
 
-export async function fmListDir(path: string): Promise<{ items: FileItem[]; root: string }> {
-  return apiFetch(`/files?path=${encodeURIComponent(path)}`);
+// ── File Manager helpers ──────────────────────────────────────────────────────
+
+/** Appends &server_id=... only when serverId is non-empty. */
+function sidParam(serverId?: string): string {
+  return serverId ? `&server_id=${encodeURIComponent(serverId)}` : "";
 }
 
-export async function fmReadFile(path: string): Promise<{ content: string; path: string }> {
-  return apiFetch(`/files/content?path=${encodeURIComponent(path)}`);
+export async function fmListDir(
+  path: string,
+  serverId?: string,
+): Promise<{ items: FileItem[]; root: string; server_id?: string }> {
+  return apiFetch(`/files?path=${encodeURIComponent(path)}${sidParam(serverId)}`);
 }
 
-export async function fmWriteFile(path: string, content: string): Promise<void> {
-  await apiFetch(`/files/content?path=${encodeURIComponent(path)}`, {
+export async function fmReadFile(
+  path: string,
+  serverId?: string,
+): Promise<{ content: string; path: string }> {
+  return apiFetch(`/files/content?path=${encodeURIComponent(path)}${sidParam(serverId)}`);
+}
+
+export async function fmWriteFile(
+  path: string,
+  content: string,
+  serverId?: string,
+): Promise<void> {
+  await apiFetch(`/files/content?path=${encodeURIComponent(path)}${sidParam(serverId)}`, {
     method: "PUT",
     body: JSON.stringify({ content }),
   });
 }
 
-export async function fmDelete(path: string): Promise<void> {
-  await apiFetch(`/files?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+export async function fmDelete(path: string, serverId?: string): Promise<void> {
+  await apiFetch(`/files?path=${encodeURIComponent(path)}${sidParam(serverId)}`, {
+    method: "DELETE",
+  });
 }
 
-export async function fmCreateDir(path: string): Promise<void> {
-  await apiFetch(`/files/dir?path=${encodeURIComponent(path)}`, { method: "POST" });
+export async function fmCreateDir(path: string, serverId?: string): Promise<void> {
+  await apiFetch(`/files/dir?path=${encodeURIComponent(path)}${sidParam(serverId)}`, {
+    method: "POST",
+  });
 }
 
-export async function fmRename(old_path: string, new_path: string): Promise<void> {
-  await apiFetch("/files/rename", {
+export async function fmRename(
+  old_path: string,
+  new_path: string,
+  serverId?: string,
+): Promise<void> {
+  await apiFetch(`/files/rename${serverId ? `?server_id=${encodeURIComponent(serverId)}` : ""}`, {
     method: "POST",
     body: JSON.stringify({ old_path, new_path }),
   });
 }
 
-export async function fmUpload(dir: string, files: File[]): Promise<void> {
+export async function fmUpload(
+  dir: string,
+  files: File[],
+  serverId?: string,
+): Promise<void> {
   const token = getToken();
   const form = new FormData();
   files.forEach((f) => form.append("file", f));
-  const res = await fetch(`/api/v1/files/upload?path=${encodeURIComponent(dir)}`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  });
+  const res = await fetch(
+    `/api/v1/files/upload?path=${encodeURIComponent(dir)}${sidParam(serverId)}`,
+    {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    },
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? "Upload failed");
   }
 }
 
-export function fmDownloadUrl(path: string): string {
+export function fmDownloadUrl(path: string, serverId?: string): string {
   const token = getToken();
-  return `/api/v1/files/download?path=${encodeURIComponent(path)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+  return (
+    `/api/v1/files/download?path=${encodeURIComponent(path)}` +
+    sidParam(serverId) +
+    (token ? `&token=${encodeURIComponent(token)}` : "")
+  );
 }
 
-export async function fmCompress(src_paths: string[], dest_zip: string): Promise<void> {
-  await apiFetch("/files/compress", {
-    method: "POST",
-    body: JSON.stringify({ src_paths, dest_zip }),
-  });
+export async function fmCompress(
+  src_paths: string[],
+  dest_zip: string,
+  serverId?: string,
+): Promise<void> {
+  await apiFetch(
+    `/files/compress${serverId ? `?server_id=${encodeURIComponent(serverId)}` : ""}`,
+    { method: "POST", body: JSON.stringify({ src_paths, dest_zip }) },
+  );
 }
 
-export async function fmExtract(zip_path: string, dest_dir: string): Promise<void> {
-  await apiFetch("/files/extract", {
-    method: "POST",
-    body: JSON.stringify({ zip_path, dest_dir }),
-  });
+export async function fmExtract(
+  zip_path: string,
+  dest_dir: string,
+  serverId?: string,
+): Promise<void> {
+  await apiFetch(
+    `/files/extract${serverId ? `?server_id=${encodeURIComponent(serverId)}` : ""}`,
+    { method: "POST", body: JSON.stringify({ zip_path, dest_dir }) },
+  );
 }
 
-export async function fmSetPermissions(path: string, mode: string): Promise<void> {
-  await apiFetch(`/files/permissions?path=${encodeURIComponent(path)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ mode }),
-  });
+export async function fmSetPermissions(
+  path: string,
+  mode: string,
+  serverId?: string,
+): Promise<void> {
+  await apiFetch(
+    `/files/permissions?path=${encodeURIComponent(path)}${sidParam(serverId)}`,
+    { method: "PATCH", body: JSON.stringify({ mode }) },
+  );
 }
