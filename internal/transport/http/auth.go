@@ -44,6 +44,10 @@ func AuthContextMiddlewareWithOptions(opts AuthOptions) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		tokenString := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+		// Allow token via query param for SSE/EventSource which cannot set headers.
+		if tokenString == "" {
+			tokenString = strings.TrimSpace(c.Query("token"))
+		}
 		if tokenString != "" && secret != "" {
 			claims := &Claims{}
 			parseOpts := make([]jwt.ParserOption, 0, 2)

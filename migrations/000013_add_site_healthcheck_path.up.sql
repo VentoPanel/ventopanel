@@ -1,0 +1,2 @@
+ALTER TABLE sites
+  ADD COLUMN IF NOT EXISTS healthcheck_path TEXT NOT NULL DEFAULT '/';

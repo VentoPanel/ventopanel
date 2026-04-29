@@ -24,6 +24,7 @@ const defaultForm: SiteInput = {
   runtime: "node",
   repository_url: "",
   branch: "main",
+  healthcheck_path: "/",
   status: "draft",
 };
 
@@ -47,6 +48,7 @@ export function SiteForm({ open, onOpenChange, site }: SiteFormProps) {
         runtime: site.Runtime,
         repository_url: site.RepositoryURL,
         branch: site.Branch || "main",
+        healthcheck_path: site.HealthcheckPath || "/",
         status: site.Status,
       });
     } else {
@@ -161,17 +163,31 @@ export function SiteForm({ open, onOpenChange, site }: SiteFormProps) {
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="si-branch">Branch</Label>
-            <Input
-              id="si-branch"
-              placeholder="main"
-              value={form.branch}
-              onChange={(e) => set("branch", e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Branch to deploy. Webhook auto-deploys only when this branch is pushed.
-            </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="si-branch">Branch</Label>
+              <Input
+                id="si-branch"
+                placeholder="main"
+                value={form.branch}
+                onChange={(e) => set("branch", e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Webhook deploys only this branch.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="si-hcpath">Healthcheck Path</Label>
+              <Input
+                id="si-hcpath"
+                placeholder="/"
+                value={form.healthcheck_path ?? "/"}
+                onChange={(e) => set("healthcheck_path", e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                URL path for uptime checks, e.g. <code>/health</code>
+              </p>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

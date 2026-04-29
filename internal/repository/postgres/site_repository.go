@@ -22,9 +22,13 @@ func (r *SiteRepository) Create(ctx context.Context, site *domain.Site) error {
 	if branch == "" {
 		branch = "main"
 	}
+	hcPath := site.HealthcheckPath
+	if hcPath == "" {
+		hcPath = "/"
+	}
 	const query = `
-		INSERT INTO sites (server_id, name, domain, runtime, repository_url, branch, status, webhook_token)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO sites (server_id, name, domain, runtime, repository_url, branch, status, webhook_token, healthcheck_path)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
 	`
 	return r.db.QueryRow(ctx, query,
@@ -36,20 +40,23 @@ func (r *SiteRepository) Create(ctx context.Context, site *domain.Site) error {
 		branch,
 		site.Status,
 		nullableStr(site.WebhookToken),
+		hcPath,
 	).Scan(&site.ID)
 }
 
 func (r *SiteRepository) GetByID(ctx context.Context, id string) (*domain.Site, error) {
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
-		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, '')
+		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
+		       COALESCE(healthcheck_path, '/')
 		FROM sites
 		WHERE id = $1
 	`
 	var site domain.Site
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&site.ID, &site.ServerID, &site.Name, &site.Domain,
-		&site.Runtime, &site.RepositoryURL, &site.Branch, &site.Status, &site.WebhookToken,
+		&site.Runtime, &site.RepositoryURL, &site.Branch, &site.Status,
+		&site.WebhookToken, &site.HealthcheckPath,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -63,14 +70,16 @@ func (r *SiteRepository) GetByID(ctx context.Context, id string) (*domain.Site, 
 func (r *SiteRepository) FindByWebhookToken(ctx context.Context, token string) (*domain.Site, error) {
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
-		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, '')
+		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
+		       COALESCE(healthcheck_path, '/')
 		FROM sites
 		WHERE webhook_token = $1
 	`
 	var site domain.Site
 	err := r.db.QueryRow(ctx, query, token).Scan(
 		&site.ID, &site.ServerID, &site.Name, &site.Domain,
-		&site.Runtime, &site.RepositoryURL, &site.Branch, &site.Status, &site.WebhookToken,
+		&site.Runtime, &site.RepositoryURL, &site.Branch, &site.Status,
+		&site.WebhookToken, &site.HealthcheckPath,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -100,7 +109,8 @@ func nullableStr(s string) interface{} {
 func (r *SiteRepository) List(ctx context.Context) ([]domain.Site, error) {
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
-		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, '')
+		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
+		       COALESCE(healthcheck_path, '/')
 		FROM sites
 		ORDER BY created_at DESC
 	`
@@ -112,10 +122,15 @@ func (r *SiteRepository) Update(ctx context.Context, site *domain.Site) error {
 	if branch == "" {
 		branch = "main"
 	}
+	hcPath := site.HealthcheckPath
+	if hcPath == "" {
+		hcPath = "/"
+	}
 	const query = `
 		UPDATE sites
 		SET server_id = $2, name = $3, domain = $4, runtime = $5,
-		    repository_url = $6, branch = $7, status = $8, updated_at = NOW()
+		    repository_url = $6, branch = $7, status = $8,
+		    healthcheck_path = $9, updated_at = NOW()
 		WHERE id = $1
 	`
 	tag, err := r.db.Exec(ctx, query,
@@ -127,6 +142,7 @@ func (r *SiteRepository) Update(ctx context.Context, site *domain.Site) error {
 		site.RepositoryURL,
 		branch,
 		site.Status,
+		hcPath,
 	)
 	if err != nil {
 		return err
@@ -142,7 +158,8 @@ func (r *SiteRepository) Update(ctx context.Context, site *domain.Site) error {
 func (r *SiteRepository) ListByServerID(ctx context.Context, serverID string) ([]domain.Site, error) {
 	const query = `
 		SELECT id, server_id, name, domain, runtime, repository_url,
-		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, '')
+		       COALESCE(branch, 'main'), status, COALESCE(webhook_token, ''),
+		       COALESCE(healthcheck_path, '/')
 		FROM sites
 		WHERE server_id = $1
 		ORDER BY created_at DESC
@@ -162,7 +179,8 @@ func (r *SiteRepository) querySites(ctx context.Context, query string, args ...i
 		var s domain.Site
 		if err := rows.Scan(
 			&s.ID, &s.ServerID, &s.Name, &s.Domain,
-			&s.Runtime, &s.RepositoryURL, &s.Branch, &s.Status, &s.WebhookToken,
+			&s.Runtime, &s.RepositoryURL, &s.Branch, &s.Status,
+			&s.WebhookToken, &s.HealthcheckPath,
 		); err != nil {
 			return nil, err
 		}

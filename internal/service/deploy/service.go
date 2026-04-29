@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -397,6 +398,25 @@ func (s *Service) GetContainerInfo(ctx context.Context, siteID string) (*Contain
 	}
 
 	return info, nil
+}
+
+// StreamContainerLogs streams live Docker logs into w using SSH.
+// It keeps streaming until the context is cancelled (client disconnects).
+func (s *Service) StreamContainerLogs(ctx context.Context, siteID string, w io.Writer) error {
+	site, err := s.siteRepo.GetByID(ctx, siteID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(site.RepositoryURL) == "" {
+		_, _ = fmt.Fprintf(w, "static site — no container\n")
+		return nil
+	}
+	server, err := s.serverRepo.GetByID(ctx, site.ServerID)
+	if err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf("docker logs -f --tail 200 ventopanel_%s 2>&1", siteID)
+	return s.ssh.RunStream(ctx, *server, cmd, w)
 }
 
 // GetContainerLogs returns the last n lines of Docker container logs.

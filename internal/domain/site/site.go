@@ -13,15 +13,16 @@ var (
 )
 
 type Site struct {
-	ID            string
-	ServerID      string
-	Name          string
-	Domain        string
-	Runtime       string
-	RepositoryURL string
-	Branch        string
-	Status        string
-	WebhookToken  string
+	ID               string
+	ServerID         string
+	Name             string
+	Domain           string
+	Runtime          string
+	RepositoryURL    string
+	Branch           string
+	Status           string
+	WebhookToken     string
+	HealthcheckPath  string // URL path for uptime checks, e.g. "/health". Defaults to "/".
 }
 
 type Repository interface {

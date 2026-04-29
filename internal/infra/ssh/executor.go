@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
@@ -75,6 +76,42 @@ func (e *Executor) RunScript(ctx context.Context, server domain.Server, commands
 	}
 
 	return nil
+}
+
+// RunStream starts a command and streams its combined stdout+stderr into w
+// line by line. It returns when the command exits or ctx is cancelled.
+// Callers should flush w after each write if streaming over HTTP.
+func (e *Executor) RunStream(ctx context.Context, server domain.Server, command string, w io.Writer) error {
+	client, err := e.newClient(ctx, server)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("create ssh session: %w", err)
+	}
+	defer session.Close()
+
+	session.Stdout = w
+	session.Stderr = w
+
+	if err := session.Start(command); err != nil {
+		return fmt.Errorf("start remote command: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- session.Wait() }()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(gossh.SIGTERM)
+		<-done
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
 }
 
 func (e *Executor) TestConnection(ctx context.Context, server domain.Server) error {

@@ -21,23 +21,25 @@ type updateServerRequest struct {
 }
 
 type createSiteRequest struct {
-	ServerID      string `json:"server_id" binding:"required"`
-	Name          string `json:"name" binding:"required"`
-	Domain        string `json:"domain" binding:"required"`
-	Runtime       string `json:"runtime" binding:"required"`
-	RepositoryURL string `json:"repository_url"`
-	Branch        string `json:"branch"`
-	Status        string `json:"status"`
+	ServerID        string `json:"server_id" binding:"required"`
+	Name            string `json:"name" binding:"required"`
+	Domain          string `json:"domain" binding:"required"`
+	Runtime         string `json:"runtime" binding:"required"`
+	RepositoryURL   string `json:"repository_url"`
+	Branch          string `json:"branch"`
+	Status          string `json:"status"`
+	HealthcheckPath string `json:"healthcheck_path"`
 }
 
 type updateSiteRequest struct {
-	ServerID      string `json:"server_id" binding:"required"`
-	Name          string `json:"name" binding:"required"`
-	Domain        string `json:"domain" binding:"required"`
-	Runtime       string `json:"runtime" binding:"required"`
-	RepositoryURL string `json:"repository_url"`
-	Branch        string `json:"branch"`
-	Status        string `json:"status"`
+	ServerID        string `json:"server_id" binding:"required"`
+	Name            string `json:"name" binding:"required"`
+	Domain          string `json:"domain" binding:"required"`
+	Runtime         string `json:"runtime" binding:"required"`
+	RepositoryURL   string `json:"repository_url"`
+	Branch          string `json:"branch"`
+	Status          string `json:"status"`
+	HealthcheckPath string `json:"healthcheck_path"`
 }
 
 type listResponse[T any] struct {

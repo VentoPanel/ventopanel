@@ -70,6 +70,7 @@ export interface Site {
   Branch: string;
   Status: string;
   WebhookToken: string;
+  HealthcheckPath: string;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -105,8 +106,19 @@ export type SiteInput = {
   runtime: string;
   repository_url: string;
   branch: string;
+  healthcheck_path?: string;
   status?: string;
 };
+
+export interface DeployLogEntry {
+  id: string;
+  task_type: string;
+  status: string;
+  output: string;
+  started_at: string;
+  finished_at?: string;
+  duration_ms?: number;
+}
 
 async function apiFetch<T>(
   path: string,
@@ -589,4 +601,24 @@ export async function fetchUptimeTrend(): Promise<UptimeTrendPoint[]> {
 export async function fetchDeployTrend(): Promise<DeployTrendPoint[]> {
   const data = await apiFetch<{ points: DeployTrendPoint[] }>("/dashboard/deploy-trend");
   return data.points ?? [];
+}
+
+// ── Deploy History ────────────────────────────────────────────────────────────
+
+export async function fetchDeployHistory(siteID: string, limit = 20): Promise<DeployLogEntry[]> {
+  const data = await apiFetch<{ items: DeployLogEntry[] }>(`/sites/${siteID}/deploys?limit=${limit}`);
+  return data.items ?? [];
+}
+
+// ── Log Streaming (SSE) ───────────────────────────────────────────────────────
+
+/**
+ * Returns the SSE URL for log streaming.
+ * The JWT token is embedded as a query parameter because EventSource/fetch
+ * streaming cannot add Authorization headers mid-stream.
+ */
+export function getLogStreamUrl(siteID: string): string {
+  const token = getToken();
+  const params = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `/api/v1/sites/${siteID}/container/logs/stream${params}`;
 }

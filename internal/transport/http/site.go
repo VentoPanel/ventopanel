@@ -2,6 +2,7 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -112,15 +113,20 @@ func (h *SiteHandler) Create(c *gin.Context) {
 	if branch == "" {
 		branch = "main"
 	}
+	hcPath := strings.TrimSpace(req.HealthcheckPath)
+	if hcPath == "" {
+		hcPath = "/"
+	}
 	site, err := h.service.Create(c.Request.Context(), domain.Site{
-		ServerID:      req.ServerID,
-		Name:          req.Name,
-		Domain:        req.Domain,
-		Runtime:       req.Runtime,
-		RepositoryURL: req.RepositoryURL,
-		Branch:        branch,
-		Status:        req.Status,
-		WebhookToken:  webhookToken,
+		ServerID:        req.ServerID,
+		Name:            req.Name,
+		Domain:          req.Domain,
+		Runtime:         req.Runtime,
+		RepositoryURL:   req.RepositoryURL,
+		Branch:          branch,
+		Status:          req.Status,
+		WebhookToken:    webhookToken,
+		HealthcheckPath: hcPath,
 	})
 	if err != nil {
 		switch {
@@ -211,15 +217,20 @@ func (h *SiteHandler) Update(c *gin.Context) {
 	if updBranch == "" {
 		updBranch = "main"
 	}
+	updHcPath := strings.TrimSpace(req.HealthcheckPath)
+	if updHcPath == "" {
+		updHcPath = "/"
+	}
 	site, err := h.service.Update(c.Request.Context(), domain.Site{
-		ID:            c.Param("id"),
-		ServerID:      req.ServerID,
-		Name:          req.Name,
-		Domain:        req.Domain,
-		Runtime:       req.Runtime,
-		RepositoryURL: req.RepositoryURL,
-		Branch:        updBranch,
-		Status:        req.Status,
+		ID:              c.Param("id"),
+		ServerID:        req.ServerID,
+		Name:            req.Name,
+		Domain:          req.Domain,
+		Runtime:         req.Runtime,
+		RepositoryURL:   req.RepositoryURL,
+		Branch:          updBranch,
+		Status:          req.Status,
+		HealthcheckPath: updHcPath,
 	})
 	if err != nil {
 		switch {
@@ -378,4 +389,105 @@ func (h *SiteHandler) RestartContainer(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// StreamContainerLogs handles GET /sites/:id/container/logs/stream
+// It streams live Docker container logs as Server-Sent Events.
+func (h *SiteHandler) StreamContainerLogs(c *gin.Context) {
+	id := c.Param("id")
+	if !h.authorizeSite(c, id, false) {
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no") // disable Nginx buffering
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "streaming unsupported"})
+		return
+	}
+
+	// sseWriter wraps gin's ResponseWriter and formats each chunk as an SSE event.
+	sseWriter := &sseLineWriter{w: c.Writer, flusher: flusher}
+
+	// Use the request context — it's cancelled when the client disconnects.
+	_ = h.deployService.StreamContainerLogs(c.Request.Context(), id, sseWriter)
+
+	// Send a closing event so the frontend knows the stream ended.
+	fmt.Fprintf(c.Writer, "event: close\ndata: stream ended\n\n")
+	flusher.Flush()
+}
+
+// sseLineWriter formats writes as SSE "data:" lines.
+type sseLineWriter struct {
+	w       gin.ResponseWriter
+	flusher http.Flusher
+	buf     strings.Builder
+}
+
+func (s *sseLineWriter) Write(p []byte) (int, error) {
+	s.buf.Write(p)
+	// Flush complete lines as SSE events.
+	for {
+		content := s.buf.String()
+		idx := strings.IndexByte(content, '\n')
+		if idx < 0 {
+			break
+		}
+		line := strings.TrimRight(content[:idx], "\r")
+		s.buf.Reset()
+		s.buf.WriteString(content[idx+1:])
+		fmt.Fprintf(s.w, "data: %s\n\n", line)
+		s.flusher.Flush()
+	}
+	return len(p), nil
+}
+
+// GetDeployHistory handles GET /sites/:id/deploys?limit=20
+func (h *SiteHandler) GetDeployHistory(c *gin.Context) {
+	id := c.Param("id")
+	if !h.authorizeSite(c, id, false) {
+		return
+	}
+	limit := 20
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	logs, err := h.taskLogRepo.ListBySiteID(c.Request.Context(), id, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	type deployLogJSON struct {
+		ID         string  `json:"id"`
+		TaskType   string  `json:"task_type"`
+		Status     string  `json:"status"`
+		Output     string  `json:"output"`
+		StartedAt  string  `json:"started_at"`
+		FinishedAt *string `json:"finished_at"`
+		DurationMs *int64  `json:"duration_ms"`
+	}
+	out := make([]deployLogJSON, 0, len(logs))
+	for _, l := range logs {
+		row := deployLogJSON{
+			ID:        l.ID,
+			TaskType:  l.TaskType,
+			Status:    l.Status,
+			Output:    l.Output,
+			StartedAt: l.StartedAt.Format("2006-01-02T15:04:05Z"),
+		}
+		if l.FinishedAt != nil {
+			s := l.FinishedAt.Format("2006-01-02T15:04:05Z")
+			row.FinishedAt = &s
+			ms := l.FinishedAt.Sub(l.StartedAt).Milliseconds()
+			row.DurationMs = &ms
+		}
+		out = append(out, row)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out})
 }

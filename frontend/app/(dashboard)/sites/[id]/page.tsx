@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -28,27 +28,30 @@ import {
   Copy,
   Check,
   Activity,
+  History,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   fetchSiteByID,
-  fetchSiteLogs,
   fetchSiteSSL,
   renewSiteSSL,
   fetchContainerInfo,
-  fetchContainerLogs,
   restartContainer,
   fetchEnvVars,
   upsertEnvVar,
   deleteEnvVar,
   regenerateWebhookToken,
   fetchUptime,
-  type TaskLog,
+  fetchDeployHistory,
+  getLogStreamUrl,
   type SSLCertInfo,
   type ContainerInfo,
   type EnvVarItem,
   type UptimeData,
+  type DeployLogEntry,
 } from "@/lib/api";
 import { useAuditEvents } from "@/hooks/use-audit";
 import { useDeploySite, useDeleteSite } from "@/hooks/use-site-mutations";
@@ -127,12 +130,6 @@ export default function SiteDetailPage({
   } = useAuditEvents({ resource_type: "site", resource_id: id });
   const events = auditData?.pages.flatMap((p) => p.items) ?? [];
 
-  const { data: logs = [], isFetching: logsFetching } = useQuery({
-    queryKey: ["site-logs", id],
-    queryFn: () => fetchSiteLogs(id, 20),
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: false,
-  });
 
   const { isAdmin, canWrite } = useAuth();
 
@@ -163,6 +160,75 @@ export default function SiteDetailPage({
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const [showContainerLogs, setShowContainerLogs] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [expandedDeploy, setExpandedDeploy] = useState<string | null>(null);
+
+  // SSE streaming log state
+  const [streamLines, setStreamLines] = useState<string[]>([]);
+  const [streamConnected, setStreamConnected] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const startStream = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setStreamLines([]);
+    setStreamConnected(true);
+
+    const url = getLogStreamUrl(id);
+
+    fetch(url, { signal: ctrl.signal })
+      .then(async (res) => {
+        if (!res.ok || !res.body) {
+          setStreamConnected(false);
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            for (const line of part.split("\n")) {
+              if (line.startsWith("data: ")) {
+                const text = line.slice(6);
+                if (text !== "stream ended") {
+                  setStreamLines((prev) => [...prev.slice(-999), text]);
+                }
+              } else if (line === "event: close") {
+                setStreamConnected(false);
+              }
+            }
+          }
+        }
+        setStreamConnected(false);
+      })
+      .catch(() => setStreamConnected(false));
+  }, [id]);
+
+  const stopStream = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setStreamConnected(false);
+  }, []);
+
+  // Auto-scroll log terminal to bottom when new lines arrive
+  useEffect(() => {
+    if (showContainerLogs && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [streamLines, showContainerLogs]);
+
+  // Stop stream when logs panel is hidden
+  useEffect(() => {
+    if (!showContainerLogs) stopStream();
+  }, [showContainerLogs, stopStream]);
 
   const hasRepo = Boolean(site?.RepositoryURL?.trim());
 
@@ -175,13 +241,12 @@ export default function SiteDetailPage({
     retry: false,
   });
 
-  const { data: containerLogs = "", isFetching: containerLogsFetching } = useQuery<string>({
-    queryKey: ["container-logs", id],
-    queryFn: () => fetchContainerLogs(id, 200),
-    enabled: hasRepo && showContainerLogs,
-    refetchInterval: showContainerLogs ? 10_000 : false,
+  const { data: deployHistory = [] } = useQuery<DeployLogEntry[]>({
+    queryKey: ["deploy-history", id],
+    queryFn: () => fetchDeployHistory(id, 20),
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
-    retry: false,
+    staleTime: 20_000,
   });
 
   // ENV vars state
@@ -695,14 +760,18 @@ export default function SiteDetailPage({
               Docker Container
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Button
+                <Button
                 variant="ghost"
                 size="sm"
                 className="text-xs text-muted-foreground"
-                onClick={() => setShowContainerLogs((v) => !v)}
+                onClick={() => {
+                  const next = !showContainerLogs;
+                  setShowContainerLogs(next);
+                  if (next) startStream();
+                }}
               >
                 <Terminal className="mr-1.5 h-3.5 w-3.5" />
-                {showContainerLogs ? "Hide Logs" : "Show Logs"}
+                {showContainerLogs ? "Hide Logs" : "Live Logs"}
               </Button>
               {canWrite && (
                 <Button
@@ -761,16 +830,38 @@ export default function SiteDetailPage({
             {showContainerLogs && (
               <div className="mt-2">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    Container Logs
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    {streamConnected ? (
+                      <Wifi className="h-3 w-3 text-green-500" />
+                    ) : (
+                      <WifiOff className="h-3 w-3 text-muted-foreground" />
+                    )}
+                    Live Stream {streamConnected ? "(connected)" : "(idle)"}
                   </p>
-                  {containerLogsFetching && (
-                    <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => { setStreamLines([]); startStream(); }}
+                  >
+                    <RefreshCw className="mr-1 h-3 w-3" />
+                    Reconnect
+                  </Button>
                 </div>
-                <pre className="rounded-md bg-muted/60 border p-3 text-xs font-mono overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap">
-                  {containerLogs || "(no output)"}
-                </pre>
+                <div className="rounded-md bg-black border border-border p-3 max-h-96 overflow-y-auto font-mono text-xs leading-relaxed">
+                  {streamLines.length === 0 ? (
+                    <span className="text-muted-foreground">
+                      {streamConnected ? "Connecting…" : "No output yet. Click Reconnect to stream."}
+                    </span>
+                  ) : (
+                    streamLines.map((line, i) => (
+                      <div key={i} className="text-green-300 whitespace-pre-wrap break-all">
+                        {line || "\u00A0"}
+                      </div>
+                    ))
+                  )}
+                  <div ref={logEndRef} />
+                </div>
               </div>
             )}
           </CardContent>
@@ -853,75 +944,72 @@ export default function SiteDetailPage({
         </CardContent>
       </Card>
 
-      {/* Deploy Logs */}
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Deploy Logs</h3>
-          <span className="text-xs text-muted-foreground">
-            {logsFetching ? "Refreshing…" : `${logs.length} runs`}
-          </span>
-        </div>
-
-        {logs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No deploy runs yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {logs.map((log: TaskLog) => {
-              const isExpanded = expandedLog === log.ID;
-              const statusColor =
-                log.Status === "success"
-                  ? "text-green-700 bg-green-50 border-green-200"
-                  : log.Status === "failed"
-                    ? "text-red-700 bg-red-50 border-red-200"
-                    : "text-blue-700 bg-blue-50 border-blue-200";
-              return (
-                <div key={log.ID} className={cn("rounded-md border", statusColor)}>
-                  <button
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm"
-                    onClick={() => setExpandedLog(isExpanded ? null : log.ID)}
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className="font-medium capitalize">{log.Status}</span>
-                    <span className="font-mono text-xs opacity-60">
-                      {log.ID.slice(0, 8)}
-                    </span>
-                    <span className="ml-auto text-xs opacity-70">
-                      {formatDistanceToNow(new Date(log.StartedAt), {
-                        addSuffix: true,
-                      })}
-                      {log.FinishedAt && (
-                        <span className="ml-1 opacity-70">
-                          ·{" "}
-                          {Math.round(
-                            (new Date(log.FinishedAt).getTime() -
-                              new Date(log.StartedAt).getTime()) /
-                              1000,
-                          )}
-                          s
+      {/* Deploy History */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="h-4 w-4" />
+            Deploy History
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              last {deployHistory.length} runs
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {deployHistory.length === 0 ? (
+            <p className="px-6 pb-4 text-sm text-muted-foreground">No deploy runs yet.</p>
+          ) : (
+            <div className="divide-y text-sm">
+              {deployHistory.map((entry) => {
+                const isExpanded = expandedDeploy === entry.id;
+                const isSuccess = entry.status === "success";
+                const isFailed = entry.status === "failed";
+                const isRunning = entry.status === "running";
+                return (
+                  <div key={entry.id}>
+                    <button
+                      className="flex w-full items-center gap-3 px-6 py-3 text-left hover:bg-muted/40 transition-colors"
+                      onClick={() => setExpandedDeploy(isExpanded ? null : entry.id)}
+                    >
+                      {isExpanded
+                        ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      }
+                      <span className={cn(
+                        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                        isSuccess && "bg-green-100 text-green-700",
+                        isFailed && "bg-red-100 text-red-700",
+                        isRunning && "bg-blue-100 text-blue-700",
+                        !isSuccess && !isFailed && !isRunning && "bg-muted text-muted-foreground",
+                      )}>
+                        {entry.status}
+                      </span>
+                      <span className="text-muted-foreground text-xs font-mono">
+                        {entry.task_type}
+                      </span>
+                      <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+                        {entry.duration_ms != null && (
+                          <span>{(entry.duration_ms / 1000).toFixed(1)}s</span>
+                        )}
+                        <span title={entry.started_at}>
+                          {formatDistanceToNow(new Date(entry.started_at), { addSuffix: true })}
                         </span>
-                      )}
-                    </span>
-                  </button>
-                  {isExpanded && log.Output && (
-                    <pre className="overflow-x-auto border-t bg-black/5 px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
-                      {log.Output}
-                    </pre>
-                  )}
-                  {isExpanded && !log.Output && (
-                    <p className="border-t px-4 py-2 text-xs opacity-60">
-                      No output captured.
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                      </span>
+                    </button>
+                    {isExpanded && (
+                      <div className="px-6 pb-3">
+                        <pre className="rounded-md bg-black p-3 font-mono text-xs text-green-300 leading-relaxed overflow-x-auto max-h-72 overflow-y-auto whitespace-pre-wrap">
+                          {entry.output || "(no output captured)"}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Audit history */}
       <div>

@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"io"
 
 	serverdomain "github.com/your-org/ventopanel/internal/domain/server"
 	sitedomain "github.com/your-org/ventopanel/internal/domain/site"
@@ -22,6 +23,7 @@ type SSHExecutor interface {
 	Run(ctx context.Context, server serverdomain.Server, command string) error
 	RunScript(ctx context.Context, server serverdomain.Server, commands []string) error
 	RunOutput(ctx context.Context, server serverdomain.Server, command string) (string, error)
+	RunStream(ctx context.Context, server serverdomain.Server, command string, w io.Writer) error
 }
 
 type FirewallManager interface {

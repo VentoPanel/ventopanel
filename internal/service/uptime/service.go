@@ -97,21 +97,24 @@ func (s *Service) CheckAll(ctx context.Context) {
 			continue
 		}
 
+		hcPath := strings.TrimSpace(site.HealthcheckPath)
+		if hcPath == "" {
+			hcPath = "/"
+		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(id, domain string) {
+		go func(id, domain, path string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			s.checkSite(ctx, id, domain, cfg)
-		}(site.ID, site.Domain)
+			s.checkSite(ctx, id, domain, path, cfg)
+		}(site.ID, site.Domain, hcPath)
 	}
 
 	wg.Wait()
 }
 
-func (s *Service) checkSite(ctx context.Context, siteID, domain string, cfg settingsdomain.NotificationConfig) {
-	// Build requests with context so they are cancelled on shutdown.
-	status, latency, statusCode, checkErr := s.ping(ctx, domain)
+func (s *Service) checkSite(ctx context.Context, siteID, domain, hcPath string, cfg settingsdomain.NotificationConfig) {
+	status, latency, statusCode, checkErr := s.ping(ctx, domain, hcPath)
 
 	check := pgrepo.UptimeCheck{SiteID: siteID, Status: status, LatencyMs: latency, StatusCode: statusCode, Error: checkErr}
 
@@ -172,11 +175,14 @@ func (s *Service) PruneAll(ctx context.Context) {
 	}
 }
 
-// ping tries HTTPS first, then HTTP fallback.
+// ping tries HTTPS first, then HTTP fallback, requesting hcPath on each.
 // Returns: status ("up"/"down"), latency ms, HTTP status code, error string.
-func (s *Service) ping(ctx context.Context, domain string) (status string, latencyMs, statusCode int, errMsg string) {
+func (s *Service) ping(ctx context.Context, domain, hcPath string) (status string, latencyMs, statusCode int, errMsg string) {
+	if hcPath == "" {
+		hcPath = "/"
+	}
 	for _, scheme := range []string{"https", "http"} {
-		url := scheme + "://" + domain
+		url := scheme + "://" + domain + hcPath
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			continue

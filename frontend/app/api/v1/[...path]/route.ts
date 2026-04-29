@@ -1,5 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+// Disable Next.js response caching — required for SSE streaming to work.
+export const dynamic = "force-dynamic";
+
 const API_BASE = process.env.API_URL ?? "http://api:8080";
 
 const HOP_BY_HOP = new Set([
