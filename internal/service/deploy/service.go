@@ -168,21 +168,40 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 		return err
 	}
 
-	webRoot := fmt.Sprintf("/var/www/vento_%s", site.ID)
-	htmlContent := staticHTML(site.Domain)
-	nginxContent := nginxStaticTemplate(site.Domain, webRoot)
+	var commands []struct{ name, cmd string }
 
-	// Use base64-encoded writes to avoid heredoc issues over SSH exec channels.
-	htmlB64 := base64.StdEncoding.EncodeToString([]byte(htmlContent))
-	nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
+	if strings.TrimSpace(site.RepositoryURL) != "" {
+		// Git-based deploy: clone/pull → detect runtime → docker build → run.
+		appDir := fmt.Sprintf("/opt/ventopanel/sites/%s/app", site.ID)
+		appPort := derivePort(site.ID)
+		script := repoDeployScript(site.ID, site.RepositoryURL, appDir, appPort)
+		scriptB64 := base64.StdEncoding.EncodeToString([]byte(script))
+		nginxContent := nginxProxyTemplate(site.Domain, appPort)
+		nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
 
-	commands := []struct{ name, cmd string }{
-		{"mkdir", fmt.Sprintf("mkdir -p %s", webRoot)},
-		{"write_html", fmt.Sprintf("echo %s | base64 -d > %s/index.html", htmlB64, webRoot)},
-		{"write_nginx", fmt.Sprintf("echo %s | base64 -d > /etc/nginx/sites-available/vento_%s.conf", nginxB64, site.ID)},
-		{"link_nginx", fmt.Sprintf("ln -sfn /etc/nginx/sites-available/vento_%s.conf /etc/nginx/sites-enabled/vento_%s.conf", site.ID, site.ID)},
-		{"nginx_test", "nginx -t 2>&1"},
-		{"nginx_reload", "systemctl reload nginx"},
+		commands = []struct{ name, cmd string }{
+			{"deploy_app", fmt.Sprintf("echo %s | base64 -d | sh 2>&1", scriptB64)},
+			{"write_nginx", fmt.Sprintf("echo %s | base64 -d > /etc/nginx/sites-available/vento_%s.conf", nginxB64, site.ID)},
+			{"link_nginx", fmt.Sprintf("ln -sfn /etc/nginx/sites-available/vento_%s.conf /etc/nginx/sites-enabled/vento_%s.conf", site.ID, site.ID)},
+			{"nginx_test", "nginx -t 2>&1"},
+			{"nginx_reload", "systemctl reload nginx"},
+		}
+	} else {
+		// Static placeholder deploy: write HTML + nginx root config.
+		webRoot := fmt.Sprintf("/var/www/vento_%s", site.ID)
+		htmlContent := staticHTML(site.Domain)
+		nginxContent := nginxStaticTemplate(site.Domain, webRoot)
+		htmlB64 := base64.StdEncoding.EncodeToString([]byte(htmlContent))
+		nginxB64 := base64.StdEncoding.EncodeToString([]byte(nginxContent))
+
+		commands = []struct{ name, cmd string }{
+			{"mkdir", fmt.Sprintf("mkdir -p %s", webRoot)},
+			{"write_html", fmt.Sprintf("echo %s | base64 -d > %s/index.html", htmlB64, webRoot)},
+			{"write_nginx", fmt.Sprintf("echo %s | base64 -d > /etc/nginx/sites-available/vento_%s.conf", nginxB64, site.ID)},
+			{"link_nginx", fmt.Sprintf("ln -sfn /etc/nginx/sites-available/vento_%s.conf /etc/nginx/sites-enabled/vento_%s.conf", site.ID, site.ID)},
+			{"nginx_test", "nginx -t 2>&1"},
+			{"nginx_reload", "systemctl reload nginx"},
+		}
 	}
 
 	var deployErr error
@@ -262,6 +281,110 @@ func (s *Service) writeAudit(resourceType, resourceID, from, to, reason, taskID 
 	})
 }
 
+
+func derivePort(siteID string) int {
+	sum := 0
+	for _, r := range siteID {
+		sum += int(r)
+	}
+	return 20000 + (sum % 10000)
+}
+
+// repoDeployScript returns a POSIX shell script that:
+//  1. Clones or updates the git repo
+//  2. Auto-detects runtime and generates a Dockerfile when missing
+//  3. Builds the image locally (no Docker Hub pull for the app image)
+//  4. Replaces the running container
+//
+// The script is designed to be piped to sh via base64:
+//
+//	echo BASE64 | base64 -d | sh 2>&1
+func repoDeployScript(siteID, repoURL, appDir string, appPort int) string {
+	return fmt.Sprintf(`#!/bin/sh
+set -e
+
+APP_DIR="%s"
+SITE_ID="%s"
+REPO_URL="%s"
+PORT=%d
+
+mkdir -p "$APP_DIR"
+
+# Clone repo on first deploy; pull latest on re-deploy.
+if [ -d "$APP_DIR/.git" ]; then
+  CURRENT_REMOTE=$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || echo "")
+  if [ "$CURRENT_REMOTE" = "$REPO_URL" ]; then
+    echo "==> Updating repo..."
+    git -C "$APP_DIR" fetch --depth 1 origin
+    git -C "$APP_DIR" reset --hard FETCH_HEAD
+  else
+    echo "==> Repo URL changed, re-cloning..."
+    rm -rf "$APP_DIR"
+    git clone --depth 1 "$REPO_URL" "$APP_DIR"
+  fi
+else
+  echo "==> Cloning repo..."
+  git clone --depth 1 "$REPO_URL" "$APP_DIR"
+fi
+
+cd "$APP_DIR"
+
+# Auto-detect runtime and generate Dockerfile when none exists.
+if [ -f Dockerfile ]; then
+  echo "==> Using existing Dockerfile"
+elif [ -f package.json ]; then
+  echo "==> Detected Node.js — generating Dockerfile"
+  printf 'FROM node:20-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install --production 2>&1 || npm install 2>&1\nCOPY . .\nEXPOSE 3000\nCMD ["npm","start"]\n' > Dockerfile
+elif [ -f requirements.txt ]; then
+  echo "==> Detected Python — generating Dockerfile"
+  printf 'FROM python:3.12-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . .\nEXPOSE 3000\nCMD ["python","app.py"]\n' > Dockerfile
+elif [ -f go.mod ]; then
+  echo "==> Detected Go — generating Dockerfile"
+  printf 'FROM golang:1.22-alpine AS builder\nWORKDIR /app\nCOPY . .\nRUN go build -o server ./...\nFROM alpine:latest\nCOPY --from=builder /app/server /server\nEXPOSE 3000\nCMD ["/server"]\n' > Dockerfile
+elif [ -f composer.json ]; then
+  echo "==> Detected PHP — generating Dockerfile"
+  printf 'FROM php:8.3-cli-alpine\nWORKDIR /app\nCOPY . .\nEXPOSE 3000\nCMD ["php","-S","0.0.0.0:3000","-t","."]\n' > Dockerfile
+else
+  echo "ERROR: No Dockerfile, package.json, requirements.txt, go.mod, or composer.json found."
+  echo "Please add a Dockerfile to your repository."
+  exit 1
+fi
+
+echo "==> Building Docker image..."
+docker build -t "ventopanel_${SITE_ID}" .
+
+echo "==> Stopping old container (if any)..."
+docker rm -f "ventopanel_${SITE_ID}" 2>/dev/null || true
+
+echo "==> Starting container on port ${PORT}..."
+docker run -d \
+  --name "ventopanel_${SITE_ID}" \
+  --restart unless-stopped \
+  -p "${PORT}:3000" \
+  "ventopanel_${SITE_ID}"
+
+echo "==> Done."
+`, appDir, siteID, repoURL, appPort)
+}
+
+// nginxProxyTemplate proxies requests to a Docker container on appPort.
+func nginxProxyTemplate(domain string, appPort int) string {
+	return fmt.Sprintf(`server {
+    listen 80;
+    server_name %s;
+
+    location / {
+        proxy_pass http://127.0.0.1:%d;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}
+`, domain, appPort)
+}
 
 // staticHTML returns a minimal HTML landing page for the deployed site.
 func staticHTML(domain string) string {
