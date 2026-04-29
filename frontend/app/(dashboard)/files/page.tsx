@@ -20,7 +20,6 @@ import {
   Pencil,
   Trash2,
   Download,
-  Save,
   X,
   Loader2,
   HardDrive,
@@ -33,8 +32,6 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fmListDir,
-  fmReadFile,
-  fmWriteFile,
   fmDelete,
   fmCreateDir,
   fmRename,
@@ -42,7 +39,6 @@ import {
   fmDownloadUrl,
   fmCompress,
   fmExtract,
-  fmSetPermissions,
   type FileItem,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -50,6 +46,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { FileEditor } from "@/components/file-editor";
+import { PermissionsModal } from "@/components/permissions-modal";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -205,56 +203,6 @@ function ContextMenu({
   );
 }
 
-// ─── Editor modal ─────────────────────────────────────────────────────────────
-
-function EditorModal({ item, onClose }: { item: FileItem; onClose: () => void }) {
-  const [content, setContent] = useState("");
-  const [loading,  setLoading]  = useState(true);
-  const [saving,   setSaving]   = useState(false);
-
-  useEffect(() => {
-    fmReadFile(item.path)
-      .then((r) => setContent(r.content))
-      .catch((e) => toast.error(e.message))
-      .finally(() => setLoading(false));
-  }, [item.path]);
-
-  async function save() {
-    setSaving(true);
-    try { await fmWriteFile(item.path, content); toast.success("Saved"); onClose(); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex h-[80vh] w-full max-w-4xl flex-col rounded-lg border bg-background shadow-xl">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <div className="flex items-center gap-2">
-            <FileCode className="h-4 w-4 text-muted-foreground" />
-            <span className="font-mono text-sm truncate max-w-[500px]">{item.path}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={save} disabled={saving || loading}>
-              {saving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
-              Save
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button>
-          </div>
-        </div>
-        {loading
-          ? <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          : <textarea
-              className="flex-1 resize-none bg-muted/30 p-4 font-mono text-sm outline-none"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              spellCheck={false}
-            />
-        }
-      </div>
-    </div>
-  );
-}
 
 // ─── Floating Action Bar ──────────────────────────────────────────────────────
 
@@ -355,7 +303,6 @@ export default function FilesPage() {
   const [compressItems, setCompressItems] = useState<FileItem[]>([]);
   const [compressName,  setCompressName]  = useState("");
   const [permItem,      setPermItem]      = useState<FileItem | null>(null);
-  const [permMode,      setPermMode]      = useState("644");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -419,12 +366,6 @@ export default function FilesPage() {
     mutationFn: (path: string) => fmExtract(path, currentPath),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); toast.success("Extracted"); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Extract failed"),
-  });
-
-  const permMutation = useMutation({
-    mutationFn: ({ path, mode }: { path: string; mode: string }) => fmSetPermissions(path, mode),
-    onSuccess: () => { toast.success("Permissions updated"); setPermItem(null); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   // ── Upload ────────────────────────────────────────────────────────────────
@@ -554,9 +495,22 @@ export default function FilesPage() {
             <p className="px-4 py-6 text-sm text-destructive">Failed to load directory.</p>
           )}
           {!isLoading && !isError && items.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
-              <Upload className="h-8 w-8 opacity-40" />
-              <p className="text-sm">Empty directory — drop files here to upload</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-4 text-muted-foreground">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50">
+                <Folder className="h-8 w-8 opacity-40" />
+              </div>
+              <div className="text-center">
+                <p className="font-medium text-foreground">Empty folder</p>
+                <p className="text-sm mt-1">Drop files here or upload your first file</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="mr-2 h-3.5 w-3.5" />
+                Upload first file
+              </Button>
             </div>
           )}
 
@@ -633,7 +587,7 @@ export default function FilesPage() {
                           onEdit={setEditItem}
                           onCompress={(i) => { setCompressItems([i]); setCompressName(i.name); }}
                           onExtract={(i) => extractMutation.mutate(i.path)}
-                          onPermissions={(i) => { setPermItem(i); setPermMode("644"); }}
+                          onPermissions={(i) => setPermItem(i)}
                         />
                       </td>
                     </tr>
@@ -749,35 +703,6 @@ export default function FilesPage() {
         </div>
       )}
 
-      {/* ── Permissions dialog ── */}
-      {permItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl space-y-4">
-            <h3 className="font-semibold flex items-center gap-2"><Lock className="h-4 w-4" /> Permissions</h3>
-            <p className="text-sm font-mono text-muted-foreground truncate">{permItem.path}</p>
-            <div className="space-y-1">
-              <Label>Mode (octal)</Label>
-              <Input
-                autoFocus maxLength={4} placeholder="755" value={permMode}
-                onChange={(e) => setPermMode(e.target.value.replace(/[^0-7]/g, ""))}
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                644 — file · 755 — dir/executable · 600 — private
-              </p>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setPermItem(null)}>Cancel</Button>
-              <Button
-                disabled={permMode.length < 3 || permMutation.isPending}
-                onClick={() => permMutation.mutate({ path: permItem.path, mode: permMode })}
-              >
-                {permMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Apply
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Delete confirm ── */}
       <ConfirmDialog
@@ -797,11 +722,20 @@ export default function FilesPage() {
         onCancel={() => setDeleteItems([])}
       />
 
-      {/* ── File editor ── */}
+      {/* ── File editor (Monaco) ── */}
       {editItem && (
-        <EditorModal
+        <FileEditor
           item={editItem}
-          onClose={() => { setEditItem(null); qc.invalidateQueries({ queryKey }); }}
+          onClose={() => setEditItem(null)}
+          onSaved={() => qc.invalidateQueries({ queryKey })}
+        />
+      )}
+
+      {/* ── Permissions modal (visual chmod) ── */}
+      {permItem && (
+        <PermissionsModal
+          item={permItem}
+          onClose={() => setPermItem(null)}
         />
       )}
 
