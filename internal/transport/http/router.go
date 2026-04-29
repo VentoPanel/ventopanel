@@ -23,8 +23,9 @@ func RegisterRoutes(
 	templateHandler *TemplateHandler,
 	siteDomainHandler *SiteDomainHandler,
 	apiTokenHandler *APITokenHandler,
-	fileManagerHandler *FileManagerHandler,
-	terminalHandler *TerminalHandler,
+	fileManagerHandler    *FileManagerHandler,
+	terminalHandler       *TerminalHandler,
+	serverMetricsHandler  *ServerMetricsHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -67,7 +68,8 @@ func RegisterRoutes(
 		api.GET("/servers/:id/stats", serverHandler.GetStats)
 		api.GET("/servers/:id/sites", serverHandler.GetServerSites)
 		api.GET("/servers/:id/containers", serverHandler.GetServerContainers)
-		api.GET("/servers/:id/terminal", terminalHandler.Connect) // WebSocket SSH terminal
+		api.GET("/servers/:id/terminal", terminalHandler.Connect)             // WebSocket SSH terminal
+		api.GET("/servers/:id/metrics/stream", serverMetricsHandler.Stream)  // SSE resource metrics
 		api.GET("/servers/health", serverHandler.Health)
 		api.POST("/sites", siteHandler.Create)
 		api.GET("/sites", siteHandler.List)
