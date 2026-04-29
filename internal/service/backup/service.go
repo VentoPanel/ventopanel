@@ -16,12 +16,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// tables included in every backup, in safe dependency order.
+// tables included in every backup, in safe dependency order
+// (parents before children to respect FK constraints on restore).
 var backupTables = []string{
-	"users",
 	"teams",
-	"team_members",
+	"users",
 	"servers",
+	"team_site_access",
+	"team_server_access",
 	"sites",
 	"site_env_vars",
 	"site_uptime_checks",
