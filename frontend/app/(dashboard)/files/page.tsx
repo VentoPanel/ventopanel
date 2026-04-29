@@ -29,7 +29,7 @@ import {
   PackageOpen,
   Lock,
   CheckSquare,
-  Server,
+  Server as ServerIcon,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -474,7 +474,7 @@ function FilesPageInner() {
         <div className="flex items-center gap-2 flex-wrap">
           {/* ── Server selector ── */}
           <div className="relative flex items-center">
-            <Server className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <ServerIcon className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <select
               value={serverId || "__local__"}
               onChange={(e) => handleServerChange(e.target.value)}
