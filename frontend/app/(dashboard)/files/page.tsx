@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  Suspense,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -268,7 +269,7 @@ function FloatingBar({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function FilesPage() {
+function FilesPageInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const qc           = useQueryClient();
@@ -742,5 +743,17 @@ export default function FilesPage() {
       {/* Unused import guard */}
       <span className="hidden"><CheckSquare className="h-0 w-0" /></span>
     </div>
+  );
+}
+
+export default function FilesPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-full items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    }>
+      <FilesPageInner />
+    </Suspense>
   );
 }
