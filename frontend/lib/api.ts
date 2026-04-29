@@ -847,3 +847,24 @@ export function fmDownloadUrl(path: string): string {
   const token = getToken();
   return `/api/v1/files/download?path=${encodeURIComponent(path)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
 }
+
+export async function fmCompress(src_paths: string[], dest_zip: string): Promise<void> {
+  await apiFetch("/files/compress", {
+    method: "POST",
+    body: JSON.stringify({ src_paths, dest_zip }),
+  });
+}
+
+export async function fmExtract(zip_path: string, dest_dir: string): Promise<void> {
+  await apiFetch("/files/extract", {
+    method: "POST",
+    body: JSON.stringify({ zip_path, dest_dir }),
+  });
+}
+
+export async function fmSetPermissions(path: string, mode: string): Promise<void> {
+  await apiFetch(`/files/permissions?path=${encodeURIComponent(path)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ mode }),
+  });
+}

@@ -48,7 +48,10 @@ func RegisterRoutes(
 		api.POST("/files/dir", fileManagerHandler.CreateDir)
 		api.POST("/files/rename", fileManagerHandler.Rename)
 		api.POST("/files/upload", fileManagerHandler.Upload)
-		api.GET("/files/download", fileManagerHandler.Download)
+		api.GET("/files/download", fileManagerHandler.Download)  // smart: file or dir→zip stream
+		api.POST("/files/compress", fileManagerHandler.Compress)
+		api.POST("/files/extract", fileManagerHandler.Extract)
+		api.PATCH("/files/permissions", fileManagerHandler.SetPermissions)
 		if devAuthHandler != nil {
 			api.POST("/dev/token", devAuthHandler.IssueToken)
 		}

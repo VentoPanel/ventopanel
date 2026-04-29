@@ -24,6 +24,9 @@ import {
   Loader2,
   HardDrive,
   ChevronRight,
+  Archive,
+  PackageOpen,
+  Lock,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -35,6 +38,9 @@ import {
   fmRename,
   fmUpload,
   fmDownloadUrl,
+  fmCompress,
+  fmExtract,
+  fmSetPermissions,
   type FileItem,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -109,11 +115,17 @@ function ContextMenu({
   onRename,
   onDelete,
   onEdit,
+  onCompress,
+  onExtract,
+  onPermissions,
 }: {
   item: FileItem;
   onRename: (item: FileItem) => void;
   onDelete: (item: FileItem) => void;
   onEdit: (item: FileItem) => void;
+  onCompress: (item: FileItem) => void;
+  onExtract: (item: FileItem) => void;
+  onPermissions: (item: FileItem) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -127,6 +139,7 @@ function ContextMenu({
   }, []);
 
   const isEditable = !item.is_dir && (TEXT_EXTS.has(item.ext) || CODE_EXTS.has(item.ext));
+  const isZip = item.ext === ".zip";
 
   return (
     <div ref={ref} className="relative">
@@ -137,7 +150,7 @@ function ContextMenu({
         <MoreVertical className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-7 z-50 w-40 rounded-md border bg-background shadow-lg py-1">
+        <div className="absolute right-0 top-7 z-50 w-44 rounded-md border bg-background shadow-lg py-1">
           {isEditable && (
             <button
               className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
@@ -146,16 +159,36 @@ function ContextMenu({
               <FileText className="h-3.5 w-3.5" /> Edit
             </button>
           )}
-          {!item.is_dir && (
-            <a
-              href={fmDownloadUrl(item.path)}
-              download={item.name}
+          <a
+            href={fmDownloadUrl(item.path)}
+            download={item.is_dir ? item.name + ".zip" : item.name}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+            onClick={() => setOpen(false)}
+          >
+            <Download className="h-3.5 w-3.5" />
+            {item.is_dir ? "Download as ZIP" : "Download"}
+          </a>
+          <button
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+            onClick={() => { setOpen(false); onCompress(item); }}
+          >
+            <Archive className="h-3.5 w-3.5" /> Compress to ZIP
+          </button>
+          {isZip && (
+            <button
               className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-              onClick={() => setOpen(false)}
+              onClick={() => { setOpen(false); onExtract(item); }}
             >
-              <Download className="h-3.5 w-3.5" /> Download
-            </a>
+              <PackageOpen className="h-3.5 w-3.5" /> Extract here
+            </button>
           )}
+          <button
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+            onClick={() => { setOpen(false); onPermissions(item); }}
+          >
+            <Lock className="h-3.5 w-3.5" /> Permissions
+          </button>
+          <div className="my-1 border-t" />
           <button
             className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
             onClick={() => { setOpen(false); onRename(item); }}
@@ -250,13 +283,21 @@ export default function FilesPage() {
   const [dragging, setDragging] = useState(false);
 
   // Modals / dialogs state
-  const [renameItem, setRenameItem]     = useState<FileItem | null>(null);
-  const [newName, setNewName]           = useState("");
-  const [deleteItem, setDeleteItem]     = useState<FileItem | null>(null);
-  const [editItem, setEditItem]         = useState<FileItem | null>(null);
-  const [newDirOpen, setNewDirOpen]     = useState(false);
-  const [newDirName, setNewDirName]     = useState("");
-  const [uploading, setUploading]       = useState(false);
+  const [renameItem, setRenameItem]         = useState<FileItem | null>(null);
+  const [newName, setNewName]               = useState("");
+  const [deleteItem, setDeleteItem]         = useState<FileItem | null>(null);
+  const [editItem, setEditItem]             = useState<FileItem | null>(null);
+  const [newDirOpen, setNewDirOpen]         = useState(false);
+  const [newDirName, setNewDirName]         = useState("");
+  const [uploading, setUploading]           = useState(false);
+
+  // Compress dialog
+  const [compressItem, setCompressItem]     = useState<FileItem | null>(null);
+  const [compressName, setCompressName]     = useState("");
+
+  // Permissions dialog
+  const [permItem, setPermItem]             = useState<FileItem | null>(null);
+  const [permMode, setPermMode]             = useState("644");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -299,6 +340,40 @@ export default function FilesPage() {
       toast.success("Folder created");
       setNewDirOpen(false);
       setNewDirName("");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  const compressMutation = useMutation({
+    mutationFn: ({ item, name }: { item: FileItem; name: string }) => {
+      const dest = currentPath.replace(/\/$/, "") + "/" + name + ".zip";
+      return fmCompress([item.path], dest);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+      toast.success("Compressed");
+      setCompressItem(null);
+      setCompressName("");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  const extractMutation = useMutation({
+    mutationFn: (item: FileItem) =>
+      fmExtract(item.path, currentPath),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+      toast.success("Extracted");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Extract failed"),
+  });
+
+  const permMutation = useMutation({
+    mutationFn: ({ path, mode }: { path: string; mode: string }) =>
+      fmSetPermissions(path, mode),
+    onSuccess: () => {
+      toast.success("Permissions updated");
+      setPermItem(null);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -462,6 +537,9 @@ export default function FilesPage() {
                         onRename={(i) => { setRenameItem(i); setNewName(i.name); }}
                         onDelete={setDeleteItem}
                         onEdit={setEditItem}
+                        onCompress={(i) => { setCompressItem(i); setCompressName(i.name); }}
+                        onExtract={(i) => extractMutation.mutate(i)}
+                        onPermissions={(i) => { setPermItem(i); setPermMode("644"); }}
                       />
                     </td>
                   </tr>
@@ -564,6 +642,76 @@ export default function FilesPage() {
       {/* ── File editor ── */}
       {editItem && (
         <EditorModal item={editItem} onClose={() => { setEditItem(null); qc.invalidateQueries({ queryKey }); }} />
+      )}
+
+      {/* ── Compress dialog ── */}
+      {compressItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl space-y-4">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Archive className="h-4 w-4" /> Compress to ZIP
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Archive name (without .zip):
+            </p>
+            <Input
+              autoFocus
+              value={compressName}
+              onChange={(e) => setCompressName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && compressName.trim() && compressMutation.mutate({ item: compressItem, name: compressName.trim() })}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => { setCompressItem(null); setCompressName(""); }}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!compressName.trim() || compressMutation.isPending}
+                onClick={() => compressMutation.mutate({ item: compressItem, name: compressName.trim() })}
+              >
+                {compressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Compress
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Permissions dialog ── */}
+      {permItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl space-y-4">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Lock className="h-4 w-4" /> Set Permissions
+            </h3>
+            <p className="text-sm text-muted-foreground font-mono truncate">{permItem.path}</p>
+            <div className="space-y-1">
+              <Label>Mode (octal)</Label>
+              <Input
+                autoFocus
+                maxLength={4}
+                placeholder="755"
+                value={permMode}
+                onChange={(e) => setPermMode(e.target.value.replace(/[^0-7]/g, ""))}
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                e.g. 644 (file), 755 (executable / dir), 600 (private)
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setPermItem(null)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={permMode.length < 3 || permMutation.isPending}
+                onClick={() => permMutation.mutate({ path: permItem.path, mode: permMode })}
+              >
+                {permMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Apply
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
