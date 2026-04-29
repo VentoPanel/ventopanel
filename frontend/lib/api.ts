@@ -921,3 +921,15 @@ export async function fmSetPermissions(
     { method: "PATCH", body: JSON.stringify({ mode }) },
   );
 }
+
+// ── Log Viewer ─────────────────────────────────────────────────────────────────
+
+export async function fetchLogUnits(serverId: string): Promise<string[]> {
+  const data = await apiFetch<{ units: string[] }>(`/servers/${serverId}/logs/units`);
+  return data.units ?? [];
+}
+
+export async function fetchLogContainers(serverId: string): Promise<string[]> {
+  const data = await apiFetch<{ containers: string[] }>(`/servers/${serverId}/logs/containers`);
+  return data.containers ?? [];
+}

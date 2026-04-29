@@ -225,8 +225,9 @@ func buildRouter(
 	fileManagerHandler := httptransport.NewFileManagerHandler(fmFactory)
 	terminalHandler := httptransport.NewTerminalHandler(serverRepo)
 	serverMetricsHandler := httptransport.NewServerMetricsHandler(serverRepo)
+	logsHandler := httptransport.NewLogsHandler(serverRepo)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler, fileManagerHandler, terminalHandler, serverMetricsHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler, fileManagerHandler, terminalHandler, serverMetricsHandler, logsHandler)
 
 	return engine
 }

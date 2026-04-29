@@ -26,6 +26,7 @@ func RegisterRoutes(
 	fileManagerHandler    *FileManagerHandler,
 	terminalHandler       *TerminalHandler,
 	serverMetricsHandler  *ServerMetricsHandler,
+	logsHandler           *LogsHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -70,6 +71,9 @@ func RegisterRoutes(
 		api.GET("/servers/:id/containers", serverHandler.GetServerContainers)
 		api.GET("/servers/:id/terminal", terminalHandler.Connect)             // WebSocket SSH terminal
 		api.GET("/servers/:id/metrics/stream", serverMetricsHandler.Stream)  // SSE resource metrics
+		api.GET("/servers/:id/logs/stream", logsHandler.Stream)              // SSE log streaming
+		api.GET("/servers/:id/logs/units", logsHandler.ListUnits)            // systemd units list
+		api.GET("/servers/:id/logs/containers", logsHandler.ListContainers)  // docker containers list
 		api.GET("/servers/health", serverHandler.Health)
 		api.POST("/sites", siteHandler.Create)
 		api.GET("/sites", siteHandler.List)
