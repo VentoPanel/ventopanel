@@ -127,6 +127,38 @@ func (r *SiteRepository) Update(ctx context.Context, site *domain.Site) error {
 	return nil
 }
 
+func (r *SiteRepository) ListByServerID(ctx context.Context, serverID string) ([]domain.Site, error) {
+	const query = `
+		SELECT id, server_id, name, domain, runtime, repository_url, status
+		FROM sites
+		WHERE server_id = $1
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.Query(ctx, query, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sites := make([]domain.Site, 0)
+	for rows.Next() {
+		var site domain.Site
+		if err := rows.Scan(
+			&site.ID,
+			&site.ServerID,
+			&site.Name,
+			&site.Domain,
+			&site.Runtime,
+			&site.RepositoryURL,
+			&site.Status,
+		); err != nil {
+			return nil, err
+		}
+		sites = append(sites, site)
+	}
+	return sites, rows.Err()
+}
+
 func (r *SiteRepository) Delete(ctx context.Context, id string) error {
 	const query = `DELETE FROM sites WHERE id = $1`
 

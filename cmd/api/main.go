@@ -184,7 +184,7 @@ func buildRouter(
 	metricsHandler := httptransport.NewMetricsHandler()
 	devAuthHandler := httptransport.NewDevAuthHandler(cfg.AppEnv == "development", cfg.AuthJWTSecret)
 	authHandler := httptransport.NewAuthHandler(authService)
-	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService, statusEventRepo)
+	serverHandler := httptransport.NewServerHandler(serverService, provisionService, sslService, teamService, statusEventRepo, deployService, siteRepo)
 	siteHandler := httptransport.NewSiteHandler(siteService, deployService, teamService, statusEventRepo, taskLogRepo, sslService)
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)

@@ -36,6 +36,8 @@ func RegisterRoutes(
 		api.POST("/servers/:id/provision", serverHandler.Provision)
 		api.POST("/servers/:id/ssl/renew", serverHandler.RenewSSL)
 		api.GET("/servers/:id/stats", serverHandler.GetStats)
+		api.GET("/servers/:id/sites", serverHandler.GetServerSites)
+		api.GET("/servers/:id/containers", serverHandler.GetServerContainers)
 		api.GET("/servers/health", serverHandler.Health)
 		api.POST("/sites", siteHandler.Create)
 		api.GET("/sites", siteHandler.List)

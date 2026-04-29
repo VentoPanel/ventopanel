@@ -272,6 +272,49 @@ func (s *Service) ExecuteDeploy(ctx context.Context, payload DeploySitePayload) 
 	return nil
 }
 
+// ServerContainer is one row from `docker ps` on the remote server.
+type ServerContainer struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Ports  string `json:"ports"`
+	Image  string `json:"image"`
+}
+
+// GetServerContainers runs `docker ps` on a server and returns all
+// ventopanel-managed containers (name prefix ventopanel_).
+func (s *Service) GetServerContainers(ctx context.Context, serverID string) ([]ServerContainer, error) {
+	server, err := s.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+	// Format: name|status|ports|image, one per line, only ventopanel_ containers.
+	cmd := `docker ps -a --filter 'name=ventopanel_' --format '{{.Names}}|{{.Status}}|{{.Ports}}|{{.Image}}'`
+	out, _ := s.ssh.RunOutput(ctx, *server, cmd)
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return []ServerContainer{}, nil
+	}
+	lines := strings.Split(out, "\n")
+	result := make([]ServerContainer, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 4)
+		for len(parts) < 4 {
+			parts = append(parts, "")
+		}
+		result = append(result, ServerContainer{
+			Name:   parts[0],
+			Status: parts[1],
+			Ports:  parts[2],
+			Image:  parts[3],
+		})
+	}
+	return result, nil
+}
+
 // ContainerInfo holds live runtime data for a site's Docker container.
 type ContainerInfo struct {
 	Status    string `json:"status"`      // running | exited | not_found | no_container

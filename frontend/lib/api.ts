@@ -417,3 +417,30 @@ export async function upsertEnvVar(siteID: string, key: string, value: string): 
 export async function deleteEnvVar(siteID: string, key: string): Promise<void> {
   await apiFetch(`/sites/${siteID}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
 }
+
+export interface ServerSite {
+  id: string;
+  name: string;
+  domain: string;
+  runtime: string;
+  repository_url: string;
+  status: string;
+  app_port: number;
+}
+
+export interface ServerContainer {
+  name: string;
+  status: string;
+  ports: string;
+  image: string;
+}
+
+export async function fetchServerSites(serverID: string): Promise<ServerSite[]> {
+  const data = await apiFetch<{ items: ServerSite[] }>(`/servers/${serverID}/sites`);
+  return data.items ?? [];
+}
+
+export async function fetchServerContainers(serverID: string): Promise<ServerContainer[]> {
+  const data = await apiFetch<{ items: ServerContainer[] }>(`/servers/${serverID}/containers`);
+  return data.items ?? [];
+}

@@ -11,6 +11,8 @@ import (
 	auditdomain "github.com/your-org/ventopanel/internal/domain/audit"
 	domain "github.com/your-org/ventopanel/internal/domain/server"
 	"github.com/your-org/ventopanel/internal/infra/metrics"
+	pgrepo "github.com/your-org/ventopanel/internal/repository/postgres"
+	deploysvc "github.com/your-org/ventopanel/internal/service/deploy"
 	provisionsvc "github.com/your-org/ventopanel/internal/service/provision"
 	serversvc "github.com/your-org/ventopanel/internal/service/server"
 	teamsvc "github.com/your-org/ventopanel/internal/service/team"
@@ -22,6 +24,8 @@ type ServerHandler struct {
 	sslService       sslQueue
 	teamService      *teamsvc.Service
 	auditWriter      auditdomain.StatusEventWriter
+	deployService    *deploysvc.Service
+	siteRepo         *pgrepo.SiteRepository
 }
 
 type sslQueue interface {
@@ -34,6 +38,8 @@ func NewServerHandler(
 	sslService sslQueue,
 	teamService *teamsvc.Service,
 	auditWriter auditdomain.StatusEventWriter,
+	deployService *deploysvc.Service,
+	siteRepo *pgrepo.SiteRepository,
 ) *ServerHandler {
 	return &ServerHandler{
 		service:          service,
@@ -41,6 +47,8 @@ func NewServerHandler(
 		sslService:       sslService,
 		teamService:      teamService,
 		auditWriter:      auditWriter,
+		deployService:    deployService,
+		siteRepo:         siteRepo,
 	}
 }
 
@@ -320,4 +328,76 @@ func (h *ServerHandler) GetStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// GetServerSites GET /servers/:id/sites
+// Returns all sites deployed on this server, enriched with the app port.
+func (h *ServerHandler) GetServerSites(c *gin.Context) {
+	serverID := c.Param("id")
+	if !h.authorizeServer(c, serverID, false) {
+		return
+	}
+	if h.siteRepo == nil {
+		c.JSON(http.StatusOK, gin.H{"items": []struct{}{}})
+		return
+	}
+	sites, err := h.siteRepo.ListByServerID(c.Request.Context(), serverID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	type siteRow struct {
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Domain        string `json:"domain"`
+		Runtime       string `json:"runtime"`
+		RepositoryURL string `json:"repository_url"`
+		Status        string `json:"status"`
+		AppPort       int    `json:"app_port"`
+	}
+	rows := make([]siteRow, 0, len(sites))
+	for _, s := range sites {
+		port := 0
+		if strings.TrimSpace(s.RepositoryURL) != "" {
+			port = deriveAppPort(s.ID)
+		}
+		rows = append(rows, siteRow{
+			ID:            s.ID,
+			Name:          s.Name,
+			Domain:        s.Domain,
+			Runtime:       s.Runtime,
+			RepositoryURL: s.RepositoryURL,
+			Status:        s.Status,
+			AppPort:       port,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": rows})
+}
+
+// GetServerContainers GET /servers/:id/containers
+// Runs `docker ps` on the server and returns all ventopanel containers.
+func (h *ServerHandler) GetServerContainers(c *gin.Context) {
+	serverID := c.Param("id")
+	if !h.authorizeServer(c, serverID, false) {
+		return
+	}
+	if h.deployService == nil {
+		c.JSON(http.StatusOK, gin.H{"items": []struct{}{}})
+		return
+	}
+	containers, err := h.deployService.GetServerContainers(c.Request.Context(), serverID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": containers})
+}
+
+// deriveAppPort mirrors the logic in deploy.derivePort without importing it.
+func deriveAppPort(siteID string) int {
+	sum := 0
+	for _, r := range siteID {
+		sum += int(r)
+	}
+	return 20000 + (sum % 10000)
 }

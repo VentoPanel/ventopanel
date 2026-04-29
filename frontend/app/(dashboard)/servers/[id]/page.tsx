@@ -11,9 +11,18 @@ import {
   Clock,
   Plug,
   Wrench,
+  Globe,
+  Container,
+  ExternalLink,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchServers } from "@/lib/api";
+import {
+  fetchServers,
+  fetchServerSites,
+  fetchServerContainers,
+  type ServerSite,
+  type ServerContainer,
+} from "@/lib/api";
 import { useServerStats } from "@/hooks/use-server-stats";
 import { useConnectServer, useProvisionServer } from "@/hooks/use-server-mutations";
 import { useAuth } from "@/hooks/use-auth";
@@ -101,6 +110,22 @@ export default function ServerDetailPage({
   const { canWrite } = useAuth();
   const connectServer = useConnectServer();
   const provisionServer = useProvisionServer();
+
+  const { data: serverSites = [] } = useQuery<ServerSite[]>({
+    queryKey: ["server-sites", id],
+    queryFn: () => fetchServerSites(id),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
+
+  const { data: containers = [] } = useQuery<ServerContainer[]>({
+    queryKey: ["server-containers", id],
+    queryFn: () => fetchServerContainers(id),
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
 
   async function handleConnect() {
     try {
@@ -332,6 +357,103 @@ export default function ServerDetailPage({
           </div>
         )}
       </div>
+
+      {/* Sites on this server */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            Sites on this server
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {serverSites.length} total
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {serverSites.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No sites deployed yet.</p>
+          ) : (
+            <div className="divide-y text-sm">
+              {serverSites.map((site) => (
+                <div key={site.id} className="flex items-center gap-3 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{site.name}</span>
+                      <span className={cn(
+                        "inline-block rounded-full px-2 py-0.5 text-xs font-medium",
+                        site.status === "deployed" && "bg-green-100 text-green-700",
+                        site.status === "ssl_pending" && "bg-yellow-100 text-yellow-700",
+                        site.status === "deploy_failed" && "bg-red-100 text-red-700",
+                        site.status === "deploying" && "bg-blue-100 text-blue-700",
+                        !["deployed","ssl_pending","deploy_failed","deploying"].includes(site.status) && "bg-muted text-muted-foreground",
+                      )}>
+                        {site.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                      <span className="font-mono">{site.domain}</span>
+                      <a href={`http://${site.domain}`} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground shrink-0">
+                    {site.repository_url ? (
+                      <span className="font-mono">:{site.app_port}</span>
+                    ) : (
+                      <span>static</span>
+                    )}
+                  </div>
+                  <Link
+                    href={`/sites/${site.id}`}
+                    className="text-xs text-muted-foreground hover:text-foreground underline shrink-0"
+                  >
+                    View
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Docker containers */}
+      {containers.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <Container className="h-4 w-4 text-muted-foreground" />
+              Docker Containers
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                {containers.filter(c => c.status.toLowerCase().startsWith("up")).length} running
+                {" / "}{containers.length} total
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y text-sm">
+              {containers.map((c) => {
+                const running = c.status.toLowerCase().startsWith("up");
+                return (
+                  <div key={c.name} className="flex items-center gap-3 py-2">
+                    <span className={cn(
+                      "inline-block h-2 w-2 rounded-full shrink-0",
+                      running ? "bg-green-500" : "bg-red-400",
+                    )} />
+                    <code className="font-mono text-xs flex-1 truncate">{c.name}</code>
+                    <span className="text-xs text-muted-foreground shrink-0">{c.status}</span>
+                    {c.ports && (
+                      <span className="font-mono text-xs text-muted-foreground shrink-0 hidden sm:block">
+                        {c.ports}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
