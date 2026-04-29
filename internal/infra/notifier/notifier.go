@@ -24,6 +24,9 @@ func SplitRecipients(s string) []string {
 	return out
 }
 
+// Noop is a no-op notifier used when credentials are not configured.
+type Noop struct{}
+
 func NewNoop() *Noop { return &Noop{} }
 
 func (n *Noop) Notify(_ context.Context, _ string) error { return nil }
