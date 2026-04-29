@@ -24,6 +24,9 @@ import {
   X,
   Eye,
   EyeOff,
+  Webhook,
+  Copy,
+  Check,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -38,6 +41,7 @@ import {
   fetchEnvVars,
   upsertEnvVar,
   deleteEnvVar,
+  regenerateWebhookToken,
   type TaskLog,
   type SSLCertInfo,
   type ContainerInfo,
@@ -219,6 +223,40 @@ export default function SiteDetailPage({
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
+  }
+
+  // Webhook state
+  const [webhookToken, setWebhookToken] = useState<string>("");
+  const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  // Sync webhook token from site data
+  const currentToken = webhookToken || site?.WebhookToken || "";
+  const apiBase = typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.host}`
+    : "";
+  const webhookURL = currentToken
+    ? `${apiBase}/api/v1/webhook/${currentToken}`
+    : "";
+
+  async function handleCopyWebhook() {
+    if (!webhookURL) return;
+    await navigator.clipboard.writeText(webhookURL);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleRegenerate() {
+    setRegenerating(true);
+    try {
+      const token = await regenerateWebhookToken(id);
+      setWebhookToken(token);
+      toast.success("Webhook token regenerated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setRegenerating(false);
+    }
   }
 
   async function handleRestart() {
@@ -535,6 +573,65 @@ export default function SiteDetailPage({
             {envVars.length > 0 && (
               <p className="text-xs text-muted-foreground pt-1">
                 Changes take effect on next Deploy or Restart.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Webhook Deploy — only for git-deployed sites */}
+      {hasRepo && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <Webhook className="h-4 w-4 text-muted-foreground" />
+              Webhook Deploy
+            </CardTitle>
+            {canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={regenerating}
+                onClick={handleRegenerate}
+              >
+                <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", regenerating && "animate-spin")} />
+                Regenerate
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {currentToken ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
+                    {webhookURL}
+                  </code>
+                  <Button variant="outline" size="sm" onClick={handleCopyWebhook}>
+                    {copied
+                      ? <Check className="h-3.5 w-3.5 text-green-600" />
+                      : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+                <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
+                  <p className="font-medium text-foreground">GitHub setup:</p>
+                  <p>1. Repository → Settings → Webhooks → Add webhook</p>
+                  <p>2. Payload URL: paste the URL above</p>
+                  <p>3. Content type: <code className="bg-muted px-1 rounded">application/json</code></p>
+                  <p>4. Events: <strong>Just the push event</strong></p>
+                  <p>5. Save — every <code className="bg-muted px-1 rounded">git push</code> triggers auto-deploy</p>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No webhook token yet.{" "}
+                {canWrite && (
+                  <button
+                    className="underline hover:text-foreground"
+                    onClick={handleRegenerate}
+                  >
+                    Generate one
+                  </button>
+                )}
               </p>
             )}
           </CardContent>

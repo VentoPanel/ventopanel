@@ -20,6 +20,7 @@ type Site struct {
 	Runtime       string
 	RepositoryURL string
 	Status        string
+	WebhookToken  string
 }
 
 type Repository interface {

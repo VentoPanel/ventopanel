@@ -68,6 +68,7 @@ export interface Site {
   Runtime: string;
   RepositoryURL: string;
   Status: string;
+  WebhookToken: string;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -416,6 +417,13 @@ export async function upsertEnvVar(siteID: string, key: string, value: string): 
 
 export async function deleteEnvVar(siteID: string, key: string): Promise<void> {
   await apiFetch(`/sites/${siteID}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
+}
+
+export async function regenerateWebhookToken(siteID: string): Promise<string> {
+  const data = await apiFetch<{ webhook_token: string }>(`/sites/${siteID}/webhook/regenerate`, {
+    method: "POST",
+  });
+  return data.webhook_token;
 }
 
 export interface ServerSite {

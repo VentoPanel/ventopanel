@@ -107,6 +107,7 @@ func (h *SiteHandler) Create(c *gin.Context) {
 		return
 	}
 
+	webhookToken, _ := GenerateWebhookToken()
 	site, err := h.service.Create(c.Request.Context(), domain.Site{
 		ServerID:      req.ServerID,
 		Name:          req.Name,
@@ -114,6 +115,7 @@ func (h *SiteHandler) Create(c *gin.Context) {
 		Runtime:       req.Runtime,
 		RepositoryURL: req.RepositoryURL,
 		Status:        req.Status,
+		WebhookToken:  webhookToken,
 	})
 	if err != nil {
 		switch {

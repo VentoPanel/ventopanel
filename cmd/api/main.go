@@ -193,8 +193,9 @@ func buildRouter(
 	settingsHandler := httptransport.NewSettingsHandler(settingsRepo)
 	userHandler := httptransport.NewUserHandler(userRepo)
 	envHandler := httptransport.NewEnvHandler(envRepo, teamService)
+	webhookHandler := httptransport.NewWebhookHandler(siteRepo, deployService)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler)
 
 	return engine
 }
