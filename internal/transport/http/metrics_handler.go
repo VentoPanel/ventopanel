@@ -164,11 +164,8 @@ r1=$(echo $n1|awk '{print $1}') x1=$(echo $n1|awk '{print $2}')
 r2=$(echo $n2|awk '{print $1}') x2=$(echo $n2|awk '{print $2}')
 mt=$(awk '/^MemTotal/{print int($2/1024)}' /proc/meminfo)
 ma=$(awk '/^MemAvailable/{print int($2/1024)}' /proc/meminfo)
-dtotal=$(df -h / | awk 'NR==2{print $2}')
-dused=$(df -h / | awk 'NR==2{print $3}')
-dpct=$(df -h / | awk 'NR==2{print $5}')
-la1=$(awk '{print $1}' /proc/loadavg)
-la5=$(awk '{print $2}' /proc/loadavg)
+read dtotal dused dpct < <(df -h / | awk 'NR==2{print $2, $3, $5}')
+read la1 la5 < <(awk '{print $1, $2}' /proc/loadavg)
 echo "$cpu|$mt|$((mt-ma))|$dtotal|$dused|$dpct|$la1|$la5|$(( (r2-r1)/1024 ))|$(( (x2-x1)/1024 ))"
 `
 
