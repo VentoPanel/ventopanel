@@ -1,8 +1,10 @@
 package http
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,11 +40,11 @@ func NewLogsHandler(servers serverGetter) *LogsHandler {
 //
 // Query params:
 //
-//	source  = journal | docker | file   (default: journal)
-//	unit    = systemd unit name          (source=journal)
-//	container = docker container name/id (source=docker)
-//	path    = absolute file path         (source=file, default: /var/log/syslog)
-//	lines   = initial tail N lines       (default: 200)
+//	source    = journal | docker | file   (default: file)
+//	unit      = systemd unit name          (source=journal)
+//	container = docker container name/id   (source=docker)
+//	path      = absolute file path         (source=file, default: /var/log/syslog)
+//	lines     = initial tail N lines       (default: 200)
 func (h *LogsHandler) Stream(c *gin.Context) {
 	if _, ok := c.Get(contextUserIDKey); !ok {
 		c.JSON(http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
@@ -50,7 +52,7 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 	}
 
 	serverID  := c.Param("id")
-	source    := c.DefaultQuery("source", "journal")
+	source    := c.DefaultQuery("source", "file")
 	lines     := c.DefaultQuery("lines", "200")
 	unit      := c.Query("unit")
 	container := c.Query("container")
@@ -81,8 +83,9 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	// First write commits the 200 status and opens the SSE stream.
-	fmt.Fprintf(c.Writer, ": connected\n\n")
+	// Send a visible "log" event immediately so the frontend sees data
+	// the moment the HTTP response is committed — confirms SSE transport works.
+	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] connecting to %s…\n\n", srv.Host)
 	flusher.Flush()
 
 	// ── Get SSH client ───────────────────────────────────────────────────────
@@ -93,16 +96,28 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		return
 	}
 
+	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] SSH ok — fetching %s lines via %s\n\n", lines, source)
+	flusher.Flush()
+
 	ctx := c.Request.Context()
 
-	// ── Helper: run one-shot command and return non-empty lines ─────────────
+	// ── Helper: run one-shot SSH command, always return output ───────────────
+	// Unlike sshOutput(), this does NOT discard stdout when the exit code is
+	// non-zero (journalctl can exit 1 while still printing valid log lines).
 	run := func(cmd string) []string {
-		out, err := sshOutput(sshCli, cmd)
-		if err != nil {
+		sess, serr := sshCli.NewSession()
+		if serr != nil {
 			return nil
 		}
+		defer sess.Close()
+
+		var buf bytes.Buffer
+		sess.Stdout = &buf
+		sess.Stderr = &buf
+		_ = sess.Run(cmd) // ignore exit code
+
 		var result []string
-		for _, l := range strings.Split(out, "\n") {
+		for _, l := range strings.Split(buf.String(), "\n") {
 			l = strings.TrimRight(l, "\r")
 			if l != "" {
 				result = append(result, l)
@@ -127,17 +142,30 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 			return
 		}
 		initCmd = fmt.Sprintf("docker logs --tail %s %s 2>&1", logShellescape(lines), logShellescape(container))
-	case "file":
+	default: // file
 		initCmd = fmt.Sprintf("tail -n %s %s 2>&1", logShellescape(lines), logShellescape(filePath))
 	}
 
-	for _, l := range run(initCmd) {
-		fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", l)
+	initLines := run(initCmd)
+	if len(initLines) == 0 {
+		fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] no lines returned — cmd: %s\n\n", initCmd)
+	} else {
+		for _, l := range initLines {
+			fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", l)
+		}
 	}
 	flusher.Flush()
 
+	// For file source: track line count so each poll only emits new lines.
+	var fileLineCount int64
+	if source == "file" {
+		if cl := run(fmt.Sprintf("wc -l < %s 2>/dev/null", logShellescape(filePath))); len(cl) > 0 {
+			n, _ := strconv.ParseInt(strings.TrimSpace(cl[0]), 10, 64)
+			fileLineCount = n
+		}
+	}
+
 	// ── Poll for new lines every 2 seconds ──────────────────────────────────
-	// We track a "since" timestamp so each poll only fetches genuinely new lines.
 	since := time.Now()
 	pollTick  := time.NewTicker(2 * time.Second)
 	keepalive := time.NewTicker(30 * time.Second)
@@ -174,22 +202,24 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 					"docker logs --since=%s %s 2>&1",
 					logShellescape(since.UTC().Format(time.RFC3339)), logShellescape(container),
 				)
-			case "file":
-				pollCmd = fmt.Sprintf(
-					"awk -v since='%s' '$0 > since' %s 2>/dev/null | tail -n 200",
-					since.UTC().Format("2006-01-02 15:04:05"), logShellescape(filePath),
-				)
+			default: // file
+				// awk 'NR>N' reads only lines after the last known count.
+				pollCmd = fmt.Sprintf("awk 'NR>%d' %s 2>/dev/null", fileLineCount, logShellescape(filePath))
 			}
+
 			newLines := run(pollCmd)
 			since = time.Now()
 			if len(newLines) > 0 {
+				if source == "file" {
+					fileLineCount += int64(len(newLines))
+				}
 				for _, l := range newLines {
 					fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", l)
 				}
 				flusher.Flush()
 			}
 
-			// Reconnect SSH if the client died.
+			// Refresh SSH client from pool (reconnects if connection died).
 			if _, newSSH, rerr := filemanager.GlobalPool.Get(serverID, dialCfg); rerr == nil {
 				sshCli = newSSH
 			}

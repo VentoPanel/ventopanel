@@ -12,13 +12,20 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchServers, getToken, type Server } from "@/lib/api";
 
-// Derives HTTP base URL from the WS env var or falls back to the API base var.
+// Derives HTTP base URL from env vars, falling back to the same host on port 8080
+// (the Go API port). This mirrors what the terminal does for WebSocket connections,
+// and bypasses the Next.js proxy which can buffer SSE responses.
 function getApiBaseUrl(): string {
-  const ws = process.env.NEXT_PUBLIC_API_WS_URL;
+  const ws = process.env.NEXT_PUBLIC_API_WS_URL?.trim();
   if (ws) return ws.replace(/^ws(s?):\/\//, "http$1://").replace(/\/$/, "");
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
   if (base) return base.replace(/\/$/, "");
-  return "";  // empty → use relative URL (Next.js proxy)
+  // Use same host as the browser but port 8080 (direct to Go API, no proxy).
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol; // "http:" or "https:"
+    return `${proto}//${window.location.hostname}:8080`;
+  }
+  return "";
 }
 import { cn } from "@/lib/utils";
 

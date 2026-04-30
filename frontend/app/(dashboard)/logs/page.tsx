@@ -8,7 +8,7 @@ import {
   ScrollText, Play, Square, Trash2, Download,
   RefreshCw, AlertCircle, ChevronDown,
 } from "lucide-react";
-import { fetchServers, fetchLogUnits, fetchLogContainers } from "@/lib/api";
+import { fetchServers, fetchLogUnits, fetchLogContainers, getToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +33,7 @@ function stripAnsi(str: string): string {
 
 export default function LogsPage() {
   const [serverId, setServerId]     = useState("");
-  const [source, setSource]         = useState<Source>("journal");
+  const [source, setSource]         = useState<Source>("file");
   const [unit, setUnit]             = useState("_all");
   const [container, setContainer]   = useState("");
   const [filePath, setFilePath]     = useState("/var/log/syslog");
@@ -92,20 +92,24 @@ export default function LogsPage() {
     esRef.current?.close();
     esRef.current = null;
 
-    const token = localStorage.getItem("token") ?? "";
+    const token = getToken() ?? "";
     const params = new URLSearchParams({ source, lines });
-    if (source === "journal") params.set("unit", unit || "sshd");
+    if (source === "journal") params.set("unit", unit || "_all");
     if (source === "docker")  params.set("container", container);
     if (source === "file")    params.set("path", filePath);
 
-    // Derive HTTP base from NEXT_PUBLIC_API_WS_URL (ws://host → http://host)
-    // so SSE bypasses the Next.js proxy, which buffers streaming responses.
-    // Falls back to NEXT_PUBLIC_API_BASE_URL, then to relative URL (proxy).
-    const wsBase = process.env.NEXT_PUBLIC_API_WS_URL;
-    const httpBase = wsBase
-      ? wsBase.replace(/^ws(s?):\/\//, "http$1://").replace(/\/$/, "")
-      : (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
-    const url = `${httpBase}/api/v1/servers/${sid}/logs/stream?${params}&token=${encodeURIComponent(token)}`;
+    // Mirror the terminal: derive HTTP base from env vars or use same hostname
+    // on port 8080 to connect directly to the Go API, bypassing the Next.js
+    // proxy (which can buffer SSE responses and delay events).
+    function getApiBase(): string {
+      const ws = process.env.NEXT_PUBLIC_API_WS_URL?.trim();
+      if (ws) return ws.replace(/^ws(s?):\/\//, "http$1://").replace(/\/$/, "");
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+      if (base) return base.replace(/\/$/, "");
+      const proto = window.location.protocol;
+      return `${proto}//${window.location.hostname}:8080`;
+    }
+    const url = `${getApiBase()}/api/v1/servers/${sid}/logs/stream?${params}&token=${encodeURIComponent(token)}`;
 
     const es = new EventSource(url);
     esRef.current = es;
@@ -144,7 +148,7 @@ export default function LogsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, lines, unit, container, filePath]);
 
-  const startStream = useCallback(() => {
+  const startStream = useCallback(async () => {
     if (!serverId) return;
     if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
     esRef.current?.close();
@@ -152,8 +156,36 @@ export default function LogsPage() {
     setLogLines([]);
     setError("");
     setStreaming(true);
+
+    // Preflight: verify endpoint is reachable and get a clear error if not.
+    const token = getToken() ?? "";
+    const params = new URLSearchParams({ source, lines });
+    if (source === "journal") params.set("unit", unit || "_all");
+    if (source === "docker")  params.set("container", container);
+    if (source === "file")    params.set("path", filePath);
+    const ws = process.env.NEXT_PUBLIC_API_WS_URL?.trim();
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+    const apiBase = ws
+      ? ws.replace(/^ws(s?):\/\//, "http$1://").replace(/\/$/, "")
+      : base
+        ? base.replace(/\/$/, "")
+        : `${window.location.protocol}//${window.location.hostname}:8080`;
+    const preflightUrl = `${apiBase}/api/v1/servers/${serverId}/logs/stream?${params}&token=${encodeURIComponent(token)}`;
+    try {
+      const r = await fetch(preflightUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        setError(body?.error ?? `HTTP ${r.status}`);
+        setStreaming(false);
+        return;
+      }
+    } catch { /* network error — let EventSource handle & retry */ }
+
     openEs(serverId);
-  }, [serverId, openEs]);
+  }, [serverId, source, lines, unit, container, filePath, openEs]);
 
   // Stop stream on unmount.
   useEffect(() => () => stopStream(), [stopStream]);
@@ -163,7 +195,7 @@ export default function LogsPage() {
   function downloadLogs() {
     const text = logLines.map((l) => l.text).join("\n");
     const blob = new Blob([text], { type: "text/plain" });
-    const a = document.createElement("a");
+    const a    = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `logs-${serverId}-${source}-${Date.now()}.txt`;
     a.click();

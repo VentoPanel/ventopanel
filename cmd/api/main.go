@@ -191,6 +191,7 @@ func buildRouter(
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
+	engine.Use(httptransport.CORSMiddleware())
 	engine.Use(httptransport.RequestIDMiddleware())
 	engine.Use(httptransport.LoggerMiddleware(logger))
 	engine.Use(httptransport.AuthContextMiddlewareWithOptions(httptransport.AuthOptions{

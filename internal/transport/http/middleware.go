@@ -9,6 +9,29 @@ import (
 	ilogger "github.com/your-org/ventopanel/internal/infra/logger"
 )
 
+// CORSMiddleware allows browser-direct requests (e.g. from EventSource/WebSocket
+// connecting to port 8080 while the UI is served from port 3000). Reflected-origin
+// is used so that both http and https frontends are supported without wildcards
+// breaking credentialed requests.
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		c.Header("Access-Control-Allow-Origin", origin)
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Team-ID")
+		c.Header("Access-Control-Expose-Headers", "X-Request-ID")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	}
+}
+
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetHeader("X-Request-ID")
