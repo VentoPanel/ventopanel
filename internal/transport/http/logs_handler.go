@@ -57,13 +57,18 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 	var cmd string
 	switch source {
 	case "journal":
-		if unit == "" {
-			unit = "sshd"
+		if unit == "" || unit == "_all" {
+			// No unit filter — stream all services.
+			cmd = fmt.Sprintf(
+				"journalctl -n %s -f --no-pager --output=short-iso 2>&1",
+				logShellescape(lines),
+			)
+		} else {
+			cmd = fmt.Sprintf(
+				"journalctl -u %s -n %s -f --no-pager --output=short-iso 2>&1",
+				logShellescape(unit), logShellescape(lines),
+			)
 		}
-		cmd = fmt.Sprintf(
-			"journalctl -u %s -n %s -f --no-pager --output=short-iso 2>&1",
-			logShellescape(unit), logShellescape(lines),
-		)
 	case "docker":
 		if container == "" {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "container param required"})

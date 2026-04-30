@@ -34,7 +34,7 @@ function stripAnsi(str: string): string {
 export default function LogsPage() {
   const [serverId, setServerId]     = useState("");
   const [source, setSource]         = useState<Source>("journal");
-  const [unit, setUnit]             = useState("");
+  const [unit, setUnit]             = useState("_all");
   const [container, setContainer]   = useState("");
   const [filePath, setFilePath]     = useState("/var/log/syslog");
   const [lines, setLines]           = useState("200");
@@ -65,8 +65,7 @@ export default function LogsPage() {
     enabled: !!serverId && source === "docker",
   });
 
-  // Set sensible defaults when lists load.
-  useEffect(() => { if (units.length && !unit) setUnit(units[0]); }, [units, unit]);
+  // Don't auto-select a unit — leave "_all" (all services) as default.
   useEffect(() => { if (containers.length && !container) setContainer(containers[0]); }, [containers, container]);
 
   // ─── Auto-scroll ────────────────────────────────────────────────────────────
@@ -235,7 +234,7 @@ export default function LogsPage() {
               onChange={(e) => setUnit(e.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[160px]"
             >
-              {units.length === 0 && <option value="">Loading…</option>}
+              <option value="_all">All services</option>
               {units.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
@@ -341,6 +340,9 @@ export default function LogsPage() {
 
           {visible.length === 0 && !streaming && !error && (
             <span className="text-[#484f58]">Press Start to begin streaming…</span>
+          )}
+          {visible.length === 0 && streaming && !error && (
+            <span className="text-[#484f58] animate-pulse">Waiting for log entries…</span>
           )}
 
           {visible.map((line) => (
