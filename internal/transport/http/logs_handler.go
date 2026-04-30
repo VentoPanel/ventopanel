@@ -1,9 +1,7 @@
 package http
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -33,58 +31,30 @@ func NewLogsHandler(servers serverGetter) *LogsHandler {
 // Stream godoc
 // GET /servers/:id/logs/stream
 //
+// Uses a poll-based approach (same pattern as the metrics handler) rather than
+// long-lived SSH pipe streaming. Every pollInterval the handler runs a one-shot
+// SSH command that returns new log lines since the last poll, and sends them as
+// SSE events. This is reliable across all proxy/buffering setups.
+//
 // Query params:
 //
 //	source  = journal | docker | file   (default: journal)
 //	unit    = systemd unit name          (source=journal)
 //	container = docker container name/id (source=docker)
-//	path    = absolute file path         (source=file,  default: /var/log/syslog)
-//	lines   = tail N lines               (default: 200)
+//	path    = absolute file path         (source=file, default: /var/log/syslog)
+//	lines   = initial tail N lines       (default: 200)
 func (h *LogsHandler) Stream(c *gin.Context) {
 	if _, ok := c.Get(contextUserIDKey); !ok {
 		c.JSON(http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
 		return
 	}
 
-	serverID := c.Param("id")
-	source := c.DefaultQuery("source", "journal")
-	lines := c.DefaultQuery("lines", "200")
-	unit := c.Query("unit")
+	serverID  := c.Param("id")
+	source    := c.DefaultQuery("source", "journal")
+	lines     := c.DefaultQuery("lines", "200")
+	unit      := c.Query("unit")
 	container := c.Query("container")
-	filePath := c.DefaultQuery("path", "/var/log/syslog")
-
-	// Build the remote command.
-	var cmd string
-	switch source {
-	case "journal":
-		// stdbuf -oL forces line-buffering so journalctl flushes each line
-		// immediately even when stdout is a pipe (non-TTY SSH session).
-		// Falls back gracefully if stdbuf is not installed.
-		var jcmd string
-		if unit == "" || unit == "_all" {
-			jcmd = fmt.Sprintf(
-				"journalctl -n %s -f --no-pager --output=short 2>&1",
-				logShellescape(lines),
-			)
-		} else {
-			jcmd = fmt.Sprintf(
-				"journalctl -u %s -n %s -f --no-pager --output=short 2>&1",
-				logShellescape(unit), logShellescape(lines),
-			)
-		}
-		cmd = fmt.Sprintf("stdbuf -oL %s 2>/dev/null || %s", jcmd, jcmd)
-	case "docker":
-		if container == "" {
-			c.JSON(http.StatusBadRequest, errorResponse{Error: "container param required"})
-			return
-		}
-		cmd = fmt.Sprintf("docker logs -f --tail %s %s 2>&1", logShellescape(lines), logShellescape(container))
-	case "file":
-		cmd = fmt.Sprintf("tail -n %s -f %s 2>&1", logShellescape(lines), logShellescape(filePath))
-	default:
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid source (journal|docker|file)"})
-		return
-	}
+	filePath  := c.DefaultQuery("path", "/var/log/syslog")
 
 	srv, err := h.servers.GetByID(c.Request.Context(), serverID)
 	if err != nil {
@@ -92,10 +62,14 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	// ── Send SSE headers + first byte BEFORE any SSH work ──────────────────
-	// This is critical: Gin (and the Next.js proxy behind it) will not start
-	// streaming until the first Write call. If we do SSH setup first the proxy
-	// sees nothing for several hundred ms and may buffer or time-out the response.
+	dialCfg := filemanager.ServerDialConfig{
+		Host:     srv.Host,
+		Port:     srv.Port,
+		User:     srv.SSHUser,
+		Password: srv.SSHPassword,
+	}
+
+	// ── Open SSE response immediately (before any SSH work) ─────────────────
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -107,96 +81,124 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	// This first write opens the HTTP response and commits the 200 status.
-	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] Connecting to %s...\n\n", srv.Host)
+	// First write commits the 200 status and opens the SSE stream.
+	fmt.Fprintf(c.Writer, ": connected\n\n")
 	flusher.Flush()
 
-	// ── SSH setup (after headers are already on the wire) ───────────────────
-	_, sshCli, err := filemanager.GlobalPool.Get(serverID, filemanager.ServerDialConfig{
-		Host:     srv.Host,
-		Port:     srv.Port,
-		User:     srv.SSHUser,
-		Password: srv.SSHPassword,
-	})
+	// ── Get SSH client ───────────────────────────────────────────────────────
+	_, sshCli, err := filemanager.GlobalPool.Get(serverID, dialCfg)
 	if err != nil {
 		fmt.Fprintf(c.Writer, "event: error\ndata: SSH: %s\n\n", err.Error())
 		flusher.Flush()
 		return
 	}
 
-	sess, err := sshCli.NewSession()
-	if err != nil {
-		fmt.Fprintf(c.Writer, "event: error\ndata: SSH session: %s\n\n", err.Error())
-		flusher.Flush()
-		return
+	ctx := c.Request.Context()
+
+	// ── Helper: run one-shot command and return non-empty lines ─────────────
+	run := func(cmd string) []string {
+		out, err := sshOutput(sshCli, cmd)
+		if err != nil {
+			return nil
+		}
+		var result []string
+		for _, l := range strings.Split(out, "\n") {
+			l = strings.TrimRight(l, "\r")
+			if l != "" {
+				result = append(result, l)
+			}
+		}
+		return result
 	}
 
-	stdout, err := sess.StdoutPipe()
-	if err != nil {
-		sess.Close()
-		fmt.Fprintf(c.Writer, "event: error\ndata: stdout pipe: %s\n\n", err.Error())
-		flusher.Flush()
-		return
-	}
-	if err := sess.Start(cmd); err != nil {
-		sess.Close()
-		fmt.Fprintf(c.Writer, "event: error\ndata: start cmd: %s\n\n", err.Error())
-		flusher.Flush()
-		return
+	// ── Send initial batch ──────────────────────────────────────────────────
+	var initCmd string
+	switch source {
+	case "journal":
+		if unit == "" || unit == "_all" {
+			initCmd = fmt.Sprintf("journalctl -n %s --no-pager --output=short 2>&1", logShellescape(lines))
+		} else {
+			initCmd = fmt.Sprintf("journalctl -u %s -n %s --no-pager --output=short 2>&1", logShellescape(unit), logShellescape(lines))
+		}
+	case "docker":
+		if container == "" {
+			fmt.Fprintf(c.Writer, "event: error\ndata: container param required\n\n")
+			flusher.Flush()
+			return
+		}
+		initCmd = fmt.Sprintf("docker logs --tail %s %s 2>&1", logShellescape(lines), logShellescape(container))
+	case "file":
+		initCmd = fmt.Sprintf("tail -n %s %s 2>&1", logShellescape(lines), logShellescape(filePath))
 	}
 
-	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] Connected — running: %s\n\n", cmd)
+	for _, l := range run(initCmd) {
+		fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", l)
+	}
 	flusher.Flush()
 
-	ctx := c.Request.Context()
-	go func() {
-		<-ctx.Done()
-		sess.Close()
-	}()
-
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 64*1024)
-
-	// keepalive: send an SSE comment every 30 s so Nginx / proxies don't
-	// close a quiet log stream (e.g. a service that rarely logs).
+	// ── Poll for new lines every 2 seconds ──────────────────────────────────
+	// We track a "since" timestamp so each poll only fetches genuinely new lines.
+	since := time.Now()
+	pollTick  := time.NewTicker(2 * time.Second)
 	keepalive := time.NewTicker(30 * time.Second)
+	defer pollTick.Stop()
 	defer keepalive.Stop()
-
-	logCh := make(chan string, 64)
-	scanErr := make(chan error, 1)
-	go func() {
-		for scanner.Scan() {
-			logCh <- scanner.Text()
-		}
-		scanErr <- scanner.Err()
-	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-			sess.Close()
 			return
+
 		case <-keepalive.C:
 			fmt.Fprintf(c.Writer, ": ping\n\n")
 			flusher.Flush()
-		case line := <-logCh:
-			line = strings.ReplaceAll(line, "\n", "\\n")
-			fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", line)
-			flusher.Flush()
-		case err := <-scanErr:
-			if err != nil && err != io.EOF {
-				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", err.Error())
+
+		case <-pollTick.C:
+			var pollCmd string
+			sinceStr := since.UTC().Format("2006-01-02 15:04:05")
+			switch source {
+			case "journal":
+				if unit == "" || unit == "_all" {
+					pollCmd = fmt.Sprintf(
+						"journalctl --since=%s --no-pager --output=short 2>&1",
+						logShellescape(sinceStr),
+					)
+				} else {
+					pollCmd = fmt.Sprintf(
+						"journalctl -u %s --since=%s --no-pager --output=short 2>&1",
+						logShellescape(unit), logShellescape(sinceStr),
+					)
+				}
+			case "docker":
+				pollCmd = fmt.Sprintf(
+					"docker logs --since=%s %s 2>&1",
+					logShellescape(since.UTC().Format(time.RFC3339)), logShellescape(container),
+				)
+			case "file":
+				pollCmd = fmt.Sprintf(
+					"awk -v since='%s' '$0 > since' %s 2>/dev/null | tail -n 200",
+					since.UTC().Format("2006-01-02 15:04:05"), logShellescape(filePath),
+				)
+			}
+			newLines := run(pollCmd)
+			since = time.Now()
+			if len(newLines) > 0 {
+				for _, l := range newLines {
+					fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", l)
+				}
 				flusher.Flush()
 			}
-			sess.Close()
-			return
+
+			// Reconnect SSH if the client died.
+			if _, newSSH, rerr := filemanager.GlobalPool.Get(serverID, dialCfg); rerr == nil {
+				sshCli = newSSH
+			}
 		}
 	}
 }
 
 // ListUnits godoc
 // GET /servers/:id/logs/units
-// Returns a list of active systemd service units on the remote server.
 func (h *LogsHandler) ListUnits(c *gin.Context) {
 	if _, ok := c.Get(contextUserIDKey); !ok {
 		c.JSON(http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
@@ -211,10 +213,7 @@ func (h *LogsHandler) ListUnits(c *gin.Context) {
 	}
 
 	_, sshCli, err := filemanager.GlobalPool.Get(serverID, filemanager.ServerDialConfig{
-		Host:     srv.Host,
-		Port:     srv.Port,
-		User:     srv.SSHUser,
-		Password: srv.SSHPassword,
+		Host: srv.Host, Port: srv.Port, User: srv.SSHUser, Password: srv.SSHPassword,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, errorResponse{Error: "SSH: " + err.Error()})
@@ -229,18 +228,15 @@ func (h *LogsHandler) ListUnits(c *gin.Context) {
 
 	units := []string{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
+		if line = strings.TrimSpace(line); line != "" {
 			units = append(units, line)
 		}
 	}
-
 	c.JSON(http.StatusOK, gin.H{"units": units})
 }
 
 // ListContainers godoc
 // GET /servers/:id/logs/containers
-// Returns a list of docker container names on the remote server.
 func (h *LogsHandler) ListContainers(c *gin.Context) {
 	if _, ok := c.Get(contextUserIDKey); !ok {
 		c.JSON(http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
@@ -255,10 +251,7 @@ func (h *LogsHandler) ListContainers(c *gin.Context) {
 	}
 
 	_, sshCli, err := filemanager.GlobalPool.Get(serverID, filemanager.ServerDialConfig{
-		Host:     srv.Host,
-		Port:     srv.Port,
-		User:     srv.SSHUser,
-		Password: srv.SSHPassword,
+		Host: srv.Host, Port: srv.Port, User: srv.SSHUser, Password: srv.SSHPassword,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, errorResponse{Error: "SSH: " + err.Error()})
@@ -267,18 +260,15 @@ func (h *LogsHandler) ListContainers(c *gin.Context) {
 
 	out, err := sshOutput(sshCli, `docker ps --format '{{.Names}}' 2>/dev/null || echo ""`)
 	if err != nil {
-		// Docker may not be installed — return empty list gracefully.
 		c.JSON(http.StatusOK, gin.H{"containers": []string{}})
 		return
 	}
 
 	containers := []string{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
+		if line = strings.TrimSpace(line); line != "" {
 			containers = append(containers, line)
 		}
 	}
-
 	c.JSON(http.StatusOK, gin.H{"containers": containers})
 }
