@@ -78,26 +78,30 @@ export default function LogsPage() {
   // ─── Streaming ──────────────────────────────────────────────────────────────
 
   const stopStream = useCallback(() => {
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
     esRef.current?.close();
     esRef.current = null;
+    retryRef.current = 0;
     setStreaming(false);
   }, []);
 
-  const startStream = useCallback(() => {
-    if (!serverId) return;
-    stopStream();
-    setLogLines([]);
-    setError("");
-    setStreaming(true);
+  const retryRef   = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MAX_RETRIES = 5;
+
+  const openEs = useCallback((sid: string) => {
+    esRef.current?.close();
+    esRef.current = null;
 
     const token = localStorage.getItem("token") ?? "";
     const params = new URLSearchParams({ source, lines });
-    if (source === "journal")   params.set("unit", unit || "sshd");
-    if (source === "docker")    params.set("container", container);
-    if (source === "file")      params.set("path", filePath);
+    if (source === "journal") params.set("unit", unit || "sshd");
+    if (source === "docker")  params.set("container", container);
+    if (source === "file")    params.set("path", filePath);
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-    const url = `${baseUrl}/api/v1/servers/${serverId}/logs/stream?${params}&token=${token}`;
+    // Use env var if set, otherwise fall back to relative URL (Next.js proxy).
+    const base = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+    const url = `${base}/api/v1/servers/${sid}/logs/stream?${params}&token=${encodeURIComponent(token)}`;
 
     const es = new EventSource(url);
     esRef.current = es;
@@ -108,19 +112,41 @@ export default function LogsPage() {
         const next = [...prev, { id: lineIdRef.current++, text, ts: Date.now() }];
         return next.length > maxLines ? next.slice(next.length - maxLines) : next;
       });
+      retryRef.current = 0; // reset on successful data
     });
 
     es.addEventListener("error", (e) => {
       const msg = (e as MessageEvent).data ?? "Stream error";
       setError(msg);
-      stopStream();
+      es.close();
+      setStreaming(false);
     });
 
     es.onerror = () => {
-      setError("Connection lost");
-      stopStream();
+      es.close();
+      esRef.current = null;
+      if (retryRef.current < MAX_RETRIES) {
+        retryRef.current += 1;
+        const delay = Math.min(2 ** retryRef.current * 1000, 30_000);
+        retryTimer.current = setTimeout(() => openEs(sid), delay);
+      } else {
+        setError(`Connection lost after ${MAX_RETRIES} reconnect attempts.`);
+        setStreaming(false);
+      }
     };
-  }, [serverId, source, unit, container, filePath, lines, stopStream]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, lines, unit, container, filePath]);
+
+  const startStream = useCallback(() => {
+    if (!serverId) return;
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
+    esRef.current?.close();
+    retryRef.current = 0;
+    setLogLines([]);
+    setError("");
+    setStreaming(true);
+    openEs(serverId);
+  }, [serverId, openEs]);
 
   // Stop stream on unmount.
   useEffect(() => () => stopStream(), [stopStream]);

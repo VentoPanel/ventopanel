@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -134,25 +135,41 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024)
 
-	for scanner.Scan() {
+	// keepalive: send an SSE comment every 30 s so Nginx / proxies don't
+	// close a quiet log stream (e.g. a service that rarely logs).
+	keepalive := time.NewTicker(30 * time.Second)
+	defer keepalive.Stop()
+
+	lines := make(chan string, 64)
+	scanErr := make(chan error, 1)
+	go func() {
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+		scanErr <- scanner.Err()
+	}()
+
+	for {
 		select {
 		case <-ctx.Done():
 			sess.Close()
 			return
-		default:
+		case <-keepalive.C:
+			fmt.Fprintf(c.Writer, ": ping\n\n")
+			flusher.Flush()
+		case line := <-lines:
+			line = strings.ReplaceAll(line, "\n", "\\n")
+			fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", line)
+			flusher.Flush()
+		case err := <-scanErr:
+			if err != nil && err != io.EOF {
+				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", err.Error())
+				flusher.Flush()
+			}
+			sess.Close()
+			return
 		}
-		line := scanner.Text()
-		// Escape newlines inside the SSE data field.
-		line = strings.ReplaceAll(line, "\n", "\\n")
-		fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", line)
-		flusher.Flush()
 	}
-
-	if err := scanner.Err(); err != nil && err != io.EOF {
-		fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", err.Error())
-		flusher.Flush()
-	}
-	sess.Close()
 }
 
 // ListUnits godoc
