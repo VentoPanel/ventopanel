@@ -57,18 +57,22 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 	var cmd string
 	switch source {
 	case "journal":
+		// stdbuf -oL forces line-buffering so journalctl flushes each line
+		// immediately even when stdout is a pipe (non-TTY SSH session).
+		// Falls back gracefully if stdbuf is not installed.
+		var jcmd string
 		if unit == "" || unit == "_all" {
-			// No unit filter — stream all services.
-			cmd = fmt.Sprintf(
-				"journalctl -n %s -f --no-pager --output=short-iso 2>&1",
+			jcmd = fmt.Sprintf(
+				"journalctl -n %s -f --no-pager --output=short 2>&1",
 				logShellescape(lines),
 			)
 		} else {
-			cmd = fmt.Sprintf(
-				"journalctl -u %s -n %s -f --no-pager --output=short-iso 2>&1",
+			jcmd = fmt.Sprintf(
+				"journalctl -u %s -n %s -f --no-pager --output=short 2>&1",
 				logShellescape(unit), logShellescape(lines),
 			)
 		}
+		cmd = fmt.Sprintf("stdbuf -oL %s 2>/dev/null || %s", jcmd, jcmd)
 	case "docker":
 		if container == "" {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "container param required"})
@@ -136,6 +140,11 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "streaming unsupported"})
 		return
 	}
+
+	// Immediately emit a connection-confirmed line so the frontend can
+	// distinguish "stream connected but no entries" from "stream not working".
+	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] Connected to %s — streaming %s\n\n", srv.Host, source)
+	flusher.Flush()
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024)
