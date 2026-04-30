@@ -194,10 +194,11 @@ export default function MonitorPage() {
       } catch { /* ignore parse errors */ }
     });
 
-    // SSE-level error event sent by the server (SSH failure after retries).
+    // Only handle *server-sent* named "error" events (they carry a data field).
+    // Transport-level errors are handled exclusively by es.onerror below.
     es.addEventListener("error", (e) => {
-      const msg = (e as MessageEvent).data;
-      if (msg) setErrMsg(msg);
+      if (!(e instanceof MessageEvent) || !e.data) return;
+      setErrMsg(e.data as string);
       setStatus("error");
       es.close();
     });

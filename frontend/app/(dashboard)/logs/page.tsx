@@ -115,9 +115,12 @@ export default function LogsPage() {
       retryRef.current = 0; // reset on successful data
     });
 
+    // Only handle *server-sent* named "error" events (they carry a data field).
+    // Transport-level errors (connection drop, proxy timeout) have no data and
+    // are handled exclusively by es.onerror below.
     es.addEventListener("error", (e) => {
-      const msg = (e as MessageEvent).data ?? "Stream error";
-      setError(msg);
+      if (!(e instanceof MessageEvent) || !e.data) return;
+      setError(e.data as string);
       es.close();
       setStreaming(false);
     });
