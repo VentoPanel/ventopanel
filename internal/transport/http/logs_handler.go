@@ -140,11 +140,11 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 	keepalive := time.NewTicker(30 * time.Second)
 	defer keepalive.Stop()
 
-	lines := make(chan string, 64)
+	logCh := make(chan string, 64)
 	scanErr := make(chan error, 1)
 	go func() {
 		for scanner.Scan() {
-			lines <- scanner.Text()
+			logCh <- scanner.Text()
 		}
 		scanErr <- scanner.Err()
 	}()
@@ -157,7 +157,7 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		case <-keepalive.C:
 			fmt.Fprintf(c.Writer, ": ping\n\n")
 			flusher.Flush()
-		case line := <-lines:
+		case line := <-logCh:
 			line = strings.ReplaceAll(line, "\n", "\\n")
 			fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", line)
 			flusher.Flush()
