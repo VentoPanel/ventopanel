@@ -98,9 +98,14 @@ export default function LogsPage() {
     if (source === "docker")  params.set("container", container);
     if (source === "file")    params.set("path", filePath);
 
-    // Use env var if set, otherwise fall back to relative URL (Next.js proxy).
-    const base = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
-    const url = `${base}/api/v1/servers/${sid}/logs/stream?${params}&token=${encodeURIComponent(token)}`;
+    // Derive HTTP base from NEXT_PUBLIC_API_WS_URL (ws://host → http://host)
+    // so SSE bypasses the Next.js proxy, which buffers streaming responses.
+    // Falls back to NEXT_PUBLIC_API_BASE_URL, then to relative URL (proxy).
+    const wsBase = process.env.NEXT_PUBLIC_API_WS_URL;
+    const httpBase = wsBase
+      ? wsBase.replace(/^ws(s?):\/\//, "http$1://").replace(/\/$/, "")
+      : (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+    const url = `${httpBase}/api/v1/servers/${sid}/logs/stream?${params}&token=${encodeURIComponent(token)}`;
 
     const es = new EventSource(url);
     esRef.current = es;
