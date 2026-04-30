@@ -92,43 +92,10 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	_, sshCli, err := filemanager.GlobalPool.Get(serverID, filemanager.ServerDialConfig{
-		Host:     srv.Host,
-		Port:     srv.Port,
-		User:     srv.SSHUser,
-		Password: srv.SSHPassword,
-	})
-	if err != nil {
-		c.JSON(http.StatusBadGateway, errorResponse{Error: "SSH: " + err.Error()})
-		return
-	}
-
-	// Open a dedicated SSH session for the streaming command.
-	sess, err := sshCli.NewSession()
-	if err != nil {
-		c.JSON(http.StatusBadGateway, errorResponse{Error: "SSH session: " + err.Error()})
-		return
-	}
-
-	stdout, err := sess.StdoutPipe()
-	if err != nil {
-		sess.Close()
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
-		return
-	}
-	if err := sess.Start(cmd); err != nil {
-		sess.Close()
-		c.JSON(http.StatusBadGateway, errorResponse{Error: "start cmd: " + err.Error()})
-		return
-	}
-
-	// Ensure session closes when client disconnects.
-	ctx := c.Request.Context()
-	go func() {
-		<-ctx.Done()
-		sess.Close()
-	}()
-
+	// ── Send SSE headers + first byte BEFORE any SSH work ──────────────────
+	// This is critical: Gin (and the Next.js proxy behind it) will not start
+	// streaming until the first Write call. If we do SSH setup first the proxy
+	// sees nothing for several hundred ms and may buffer or time-out the response.
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -136,15 +103,56 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
-		sess.Close()
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "streaming unsupported"})
 		return
 	}
 
-	// Immediately emit a connection-confirmed line so the frontend can
-	// distinguish "stream connected but no entries" from "stream not working".
-	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] Connected to %s — streaming %s\n\n", srv.Host, source)
+	// This first write opens the HTTP response and commits the 200 status.
+	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] Connecting to %s...\n\n", srv.Host)
 	flusher.Flush()
+
+	// ── SSH setup (after headers are already on the wire) ───────────────────
+	_, sshCli, err := filemanager.GlobalPool.Get(serverID, filemanager.ServerDialConfig{
+		Host:     srv.Host,
+		Port:     srv.Port,
+		User:     srv.SSHUser,
+		Password: srv.SSHPassword,
+	})
+	if err != nil {
+		fmt.Fprintf(c.Writer, "event: error\ndata: SSH: %s\n\n", err.Error())
+		flusher.Flush()
+		return
+	}
+
+	sess, err := sshCli.NewSession()
+	if err != nil {
+		fmt.Fprintf(c.Writer, "event: error\ndata: SSH session: %s\n\n", err.Error())
+		flusher.Flush()
+		return
+	}
+
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		sess.Close()
+		fmt.Fprintf(c.Writer, "event: error\ndata: stdout pipe: %s\n\n", err.Error())
+		flusher.Flush()
+		return
+	}
+	if err := sess.Start(cmd); err != nil {
+		sess.Close()
+		fmt.Fprintf(c.Writer, "event: error\ndata: start cmd: %s\n\n", err.Error())
+		flusher.Flush()
+		return
+	}
+
+	fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] Connected — running: %s\n\n", cmd)
+	flusher.Flush()
+
+	ctx := c.Request.Context()
+	go func() {
+		<-ctx.Done()
+		sess.Close()
+	}()
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024)
