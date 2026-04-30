@@ -131,9 +131,9 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 	switch source {
 	case "journal":
 		if unit == "" || unit == "_all" {
-			initCmd = fmt.Sprintf("journalctl -n %s --no-pager --output=short 2>&1", logShellescape(lines))
+			initCmd = fmt.Sprintf("journalctl -b -n %s --no-pager --output=cat 2>&1 || journalctl -n %s --no-pager --output=cat 2>&1", logShellescape(lines), logShellescape(lines))
 		} else {
-			initCmd = fmt.Sprintf("journalctl -u %s -n %s --no-pager --output=short 2>&1", logShellescape(unit), logShellescape(lines))
+			initCmd = fmt.Sprintf("journalctl -b -u %s -n %s --no-pager --output=cat 2>&1 || journalctl -u %s -n %s --no-pager --output=cat 2>&1", logShellescape(unit), logShellescape(lines), logShellescape(unit), logShellescape(lines))
 		}
 	case "docker":
 		if container == "" {
@@ -188,12 +188,12 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 			case "journal":
 				if unit == "" || unit == "_all" {
 					pollCmd = fmt.Sprintf(
-						"journalctl --since=%s --no-pager --output=short 2>&1",
+						"journalctl -b --since=%s --no-pager --output=cat 2>&1",
 						logShellescape(sinceStr),
 					)
 				} else {
 					pollCmd = fmt.Sprintf(
-						"journalctl -u %s --since=%s --no-pager --output=short 2>&1",
+						"journalctl -b -u %s --since=%s --no-pager --output=cat 2>&1",
 						logShellescape(unit), logShellescape(sinceStr),
 					)
 				}
