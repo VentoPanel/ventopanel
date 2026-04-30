@@ -2,6 +2,7 @@ package filemanager
 
 import (
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -147,5 +148,40 @@ func dialSSH(cfg ServerDialConfig) (*ssh.Client, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, port)
-	return ssh.Dial("tcp", addr, clientCfg)
+
+	// Dial the raw TCP connection so we can enable OS-level TCP keepalives.
+	// This prevents NAT/firewall from silently dropping the idle connection
+	// and ensures we detect a dead peer faster than the SSH session timeout.
+	netConn, err := net.DialTimeout("tcp", addr, clientCfg.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("tcp dial %s: %w", addr, err)
+	}
+	if tc, ok := netConn.(*net.TCPConn); ok {
+		_ = tc.SetKeepAlive(true)
+		_ = tc.SetKeepAlivePeriod(15 * time.Second)
+	}
+
+	conn, chans, reqs, err := ssh.NewClientConn(netConn, addr, clientCfg)
+	if err != nil {
+		netConn.Close()
+		return nil, fmt.Errorf("ssh handshake %s: %w", addr, err)
+	}
+
+	sshCli := ssh.NewClient(conn, chans, reqs)
+
+	// Application-level SSH keepalive: send "keepalive@openssh.com" requests
+	// every 20 seconds. This keeps the SSH session alive even if the SSH server
+	// has a short ClientAliveInterval and there is no traffic.
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			_, _, err := sshCli.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				return // connection is dead; stop the goroutine
+			}
+		}
+	}()
+
+	return sshCli, nil
 }

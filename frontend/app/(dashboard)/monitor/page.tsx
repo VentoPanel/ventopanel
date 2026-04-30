@@ -147,7 +147,10 @@ export default function MonitorPage() {
   const [latest,  setLatest]    = useState<ChartPoint | null>(null);
   const [status,  setStatus]    = useState<"idle" | "connecting" | "live" | "error">("idle");
   const [errMsg,  setErrMsg]    = useState("");
-  const esRef = useRef<EventSource | null>(null);
+  const esRef        = useRef<EventSource | null>(null);
+  const retryRef     = useRef(0);
+  const retryTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const serverIdRef  = useRef("");
 
   const { data: servers, isLoading: serversLoading } = useQuery({
     queryKey: ["servers"],
@@ -155,38 +158,24 @@ export default function MonitorPage() {
     staleTime: 30_000,
   });
 
+  const MAX_RETRIES = 5;
+
   const stop = useCallback(() => {
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
     esRef.current?.close();
     esRef.current = null;
+    retryRef.current = 0;
+    serverIdRef.current = "";
     setStatus("idle");
   }, []);
 
-  const start = useCallback(async (sid: string) => {
-    stop();
-    if (!sid) return;
-    setHistory([]);
-    setLatest(null);
-    setErrMsg("");
-    setStatus("connecting");
+  const openStream = useCallback((sid: string) => {
+    esRef.current?.close();
+    esRef.current = null;
 
     const token = getToken() ?? "";
     const apiBase = getApiBaseUrl();
     const sseUrl = `${apiBase}/api/v1/servers/${sid}/metrics/stream?token=${encodeURIComponent(token)}`;
-
-    // Preflight: try a regular fetch first to get a human-readable error if SSH fails.
-    try {
-      const preflight = await fetch(sseUrl, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!preflight.ok) {
-        const body = await preflight.json().catch(() => ({ error: `HTTP ${preflight.status}` }));
-        setErrMsg(body?.error ?? `HTTP ${preflight.status}`);
-        setStatus("error");
-        return;
-      }
-    } catch {
-      // Network error — fall through to EventSource which may give a better picture.
-    }
 
     const es = new EventSource(sseUrl);
     esRef.current = es;
@@ -201,9 +190,11 @@ export default function MonitorPage() {
           return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
         });
         setStatus("live");
+        retryRef.current = 0; // successful data → reset retry counter
       } catch { /* ignore parse errors */ }
     });
 
+    // SSE-level error event sent by the server (SSH failure after retries).
     es.addEventListener("error", (e) => {
       const msg = (e as MessageEvent).data;
       if (msg) setErrMsg(msg);
@@ -211,11 +202,56 @@ export default function MonitorPage() {
       es.close();
     });
 
+    // Transport-level error (connection drop, proxy timeout, etc.).
     es.onerror = () => {
-      setStatus((prev) => prev === "live" ? "error" : prev === "connecting" ? "error" : prev);
       es.close();
+      esRef.current = null;
+
+      if (retryRef.current < MAX_RETRIES) {
+        retryRef.current += 1;
+        // Brief reconnect delay: 2 s → 4 s → 8 s … capped at 30 s.
+        const delay = Math.min(2 ** retryRef.current * 1000, 30_000);
+        setStatus("connecting");
+        retryTimer.current = setTimeout(() => {
+          if (serverIdRef.current) openStream(serverIdRef.current);
+        }, delay);
+      } else {
+        setErrMsg("Stream disconnected after " + MAX_RETRIES + " reconnect attempts.");
+        setStatus("error");
+      }
     };
-  }, [stop]);
+  // openStream is recreated via useCallback — intentionally not listed to avoid circular dep.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const start = useCallback(async (sid: string) => {
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
+    esRef.current?.close();
+    esRef.current = null;
+    retryRef.current = 0;
+    serverIdRef.current = sid;
+
+    setHistory([]);
+    setLatest(null);
+    setErrMsg("");
+    setStatus("connecting");
+
+    // Preflight: quick HTTP check to get a readable error if SSH fails immediately.
+    const token = getToken() ?? "";
+    const apiBase = getApiBaseUrl();
+    const sseUrl = `${apiBase}/api/v1/servers/${sid}/metrics/stream?token=${encodeURIComponent(token)}`;
+    try {
+      const preflight = await fetch(sseUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!preflight.ok) {
+        const body = await preflight.json().catch(() => ({ error: `HTTP ${preflight.status}` }));
+        setErrMsg(body?.error ?? `HTTP ${preflight.status}`);
+        setStatus("error");
+        return;
+      }
+    } catch { /* network error — let EventSource handle it */ }
+
+    openStream(sid);
+  }, [openStream]);
 
   // Start stream when server changes.
   useEffect(() => {
@@ -327,7 +363,7 @@ export default function MonitorPage() {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {status === "live"
               ? <><span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Live — {history.length} data points</>
-              : <><Loader2 className="h-3 w-3 animate-spin" /> Connecting…</>
+              : <><Loader2 className="h-3 w-3 animate-spin" /> {retryRef.current > 0 ? `Reconnecting… (attempt ${retryRef.current}/${MAX_RETRIES})` : "Connecting…"}</>
             }
           </div>
         </>

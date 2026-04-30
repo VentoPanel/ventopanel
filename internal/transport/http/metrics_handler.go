@@ -43,8 +43,12 @@ func NewServerMetricsHandler(servers serverGetter) *ServerMetricsHandler {
 
 const metricsInterval = 3 * time.Second
 
+const maxMetricRetries = 3
+
 // Stream handles GET /servers/:id/metrics/stream as an SSE endpoint.
 // It emits a MetricsSnapshot JSON every metricsInterval until the client disconnects.
+// On SSH errors it transparently reconnects up to maxMetricRetries times before
+// forwarding an SSE error event to the client.
 func (h *ServerMetricsHandler) Stream(c *gin.Context) {
 	serverID := c.Param("id")
 
@@ -59,13 +63,15 @@ func (h *ServerMetricsHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	// Re-use the SFTP connection pool — avoids a new TCP+SSH handshake each time.
-	_, sshCli, err := filemanager.GlobalPool.Get(serverID, filemanager.ServerDialConfig{
+	dialCfg := filemanager.ServerDialConfig{
 		Host:     srv.Host,
 		Port:     srv.Port,
 		User:     srv.SSHUser,
 		Password: srv.SSHPassword,
-	})
+	}
+
+	// Re-use the SFTP connection pool — avoids a new TCP+SSH handshake each time.
+	_, sshCli, err := filemanager.GlobalPool.Get(serverID, dialCfg)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, errorResponse{Error: "SSH: " + err.Error()})
 		return
@@ -86,8 +92,15 @@ func (h *ServerMetricsHandler) Stream(c *gin.Context) {
 	ticker := time.NewTicker(metricsInterval)
 	defer ticker.Stop()
 
+	// keepalive ticker: send an SSE comment every 30 s so Nginx / proxies don't
+	// close the connection due to inactivity between metric ticks.
+	keepalive := time.NewTicker(30 * time.Second)
+	defer keepalive.Stop()
+
+	consecutiveErrors := 0
+
 	// First snapshot immediately — don't wait for the first tick.
-	if snap, err := collectMetrics(sshCli); err == nil {
+	if snap, snapErr := collectMetrics(sshCli); snapErr == nil {
 		sseJSON(c.Writer, flusher, "metrics", snap)
 	}
 
@@ -95,14 +108,32 @@ func (h *ServerMetricsHandler) Stream(c *gin.Context) {
 		select {
 		case <-ctx.Done():
 			return
+
+		case <-keepalive.C:
+			// SSE comment — invisible to the application but keeps the TCP connection alive.
+			fmt.Fprintf(c.Writer, ": ping\n\n")
+			flusher.Flush()
+
 		case <-ticker.C:
-			snap, err := collectMetrics(sshCli)
-			if err != nil {
+			snap, snapErr := collectMetrics(sshCli)
+			if snapErr != nil {
+				consecutiveErrors++
+				// Invalidate the pool entry and try to get a fresh SSH connection.
 				filemanager.GlobalPool.Invalidate(serverID)
-				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", err.Error())
-				flusher.Flush()
-				return
+				if newSFTP, newSSH, rerr := filemanager.GlobalPool.Get(serverID, dialCfg); rerr == nil {
+					_ = newSFTP
+					sshCli = newSSH
+					consecutiveErrors = 0
+					continue // retry immediately with the new connection
+				}
+				if consecutiveErrors >= maxMetricRetries {
+					fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", snapErr.Error())
+					flusher.Flush()
+					return
+				}
+				continue
 			}
+			consecutiveErrors = 0
 			sseJSON(c.Writer, flusher, "metrics", snap)
 		}
 	}
