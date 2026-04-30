@@ -119,9 +119,12 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 		var result []string
 		for _, l := range strings.Split(buf.String(), "\n") {
 			l = strings.TrimRight(l, "\r")
-			if l != "" {
-				result = append(result, l)
+			// Skip empty lines and journalctl meta-lines (e.g. "-- No entries --",
+			// "-- Boot ... --", "-- Reboot --").
+			if l == "" || (strings.HasPrefix(l, "-- ") && strings.HasSuffix(l, " --")) {
+				continue
 			}
+			result = append(result, l)
 		}
 		return result
 	}
@@ -147,12 +150,15 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 	}
 
 	initLines := run(initCmd)
+	for _, l := range initLines {
+		fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", l)
+	}
 	if len(initLines) == 0 {
-		fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] no lines returned — cmd: %s\n\n", initCmd)
-	} else {
-		for _, l := range initLines {
-			fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", l)
+		src := source
+		if source == "file" {
+			src = filePath
 		}
+		fmt.Fprintf(c.Writer, "event: log\ndata: [ventopanel] no log entries found for: %s\n\n", src)
 	}
 	flusher.Flush()
 
