@@ -14,7 +14,7 @@ import { fetchServers, fetchNginxVhosts, fetchNginxStatus, fetchNginxVhost,
   saveNginxVhost, createNginxVhost, deleteNginxVhost,
   enableNginxVhost, disableNginxVhost, testNginxConfig,
   reloadNginx, issueNginxCert,
-  type Server, type NginxVhost, type NginxStatus } from "@/lib/api";
+  type NginxVhost, type NginxStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -243,7 +243,7 @@ export default function NginxPage() {
   const [sslTarget, setSslTarget] = useState<NginxVhost | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data: servers = [] } = useQuery<Server[]>({
+  const { data: servers = [] } = useQuery({
     queryKey: ["servers"],
     queryFn: fetchServers,
   });
