@@ -145,7 +145,7 @@ func (r *DashboardRepository) GetUptimeSummary(ctx context.Context) (UptimeSumma
 					1
 				) AS uptime_pct
 			FROM site_uptime_checks
-			WHERE checked_at > NOW() - INTERVAL '90 checks'
+			WHERE checked_at > NOW() - INTERVAL '7 days'
 			GROUP BY site_id
 		)
 		SELECT
