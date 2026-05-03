@@ -164,11 +164,11 @@ func (r *DashboardRepository) GetUptimeSummary(ctx context.Context) (UptimeSumma
 func (r *DashboardRepository) GetDeploySummary(ctx context.Context) (DeploySummary, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
-			(created_at > NOW() - INTERVAL '24 hours') AS recent,
+			(started_at > NOW() - INTERVAL '24 hours') AS recent,
 			status,
 			COUNT(*) AS cnt
 		FROM task_logs
-		WHERE task_type = 'deploy:site'
+		WHERE task_type IN ('deploy', 'rollback')
 		GROUP BY recent, status
 	`)
 	if err != nil {
@@ -233,12 +233,12 @@ func (r *DashboardRepository) GetUptimeTrend(ctx context.Context) ([]UptimeTrend
 func (r *DashboardRepository) GetDeployTrend(ctx context.Context) ([]DeployTrendPoint, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
-			date_trunc('day', created_at)                       AS day,
+			date_trunc('day', started_at)                       AS day,
 			COUNT(*) FILTER (WHERE status = 'success')          AS success,
 			COUNT(*) FILTER (WHERE status = 'failed')           AS failed
 		FROM task_logs
-		WHERE task_type = 'deploy:site'
-		  AND created_at > NOW() - INTERVAL '7 days'
+		WHERE task_type IN ('deploy', 'rollback')
+		  AND started_at > NOW() - INTERVAL '7 days'
 		GROUP BY day
 		ORDER BY day ASC
 	`)
