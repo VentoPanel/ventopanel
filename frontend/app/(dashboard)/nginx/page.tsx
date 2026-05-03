@@ -332,7 +332,7 @@ export default function NginxPage() {
                 value={serverId}
                 onChange={e => setServerId(e.target.value)}
               >
-                {servers.map((s: Server) => (
+                {servers.map(s => (
                   <option key={s.ID} value={s.ID}>{s.Name} ({s.Host})</option>
                 ))}
               </select>
