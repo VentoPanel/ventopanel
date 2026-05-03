@@ -27,6 +27,7 @@ func RegisterRoutes(
 	terminalHandler       *TerminalHandler,
 	serverMetricsHandler  *ServerMetricsHandler,
 	logsHandler           *LogsHandler,
+	nginxHandler          *NginxHandler,
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
@@ -74,6 +75,18 @@ func RegisterRoutes(
 		api.GET("/servers/:id/logs/stream", logsHandler.Stream)              // SSE log streaming
 		api.GET("/servers/:id/logs/units", logsHandler.ListUnits)            // systemd units list
 		api.GET("/servers/:id/logs/containers", logsHandler.ListContainers)  // docker containers list
+		// Nginx Manager
+		api.GET("/servers/:id/nginx/status", nginxHandler.Status)
+		api.GET("/servers/:id/nginx/vhosts", nginxHandler.ListVhosts)
+		api.POST("/servers/:id/nginx/vhosts", nginxHandler.CreateVhost)
+		api.GET("/servers/:id/nginx/vhosts/:name", nginxHandler.GetVhost)
+		api.PUT("/servers/:id/nginx/vhosts/:name", nginxHandler.SaveVhost)
+		api.DELETE("/servers/:id/nginx/vhosts/:name", nginxHandler.DeleteVhost)
+		api.POST("/servers/:id/nginx/vhosts/:name/enable", nginxHandler.EnableVhost)
+		api.POST("/servers/:id/nginx/vhosts/:name/disable", nginxHandler.DisableVhost)
+		api.POST("/servers/:id/nginx/test", nginxHandler.TestConfig)
+		api.POST("/servers/:id/nginx/reload", nginxHandler.Reload)
+		api.POST("/servers/:id/nginx/vhosts/:name/ssl", nginxHandler.IssueCert)
 		api.GET("/servers/health", serverHandler.Health)
 		api.POST("/sites", siteHandler.Create)
 		api.GET("/sites", siteHandler.List)

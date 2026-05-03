@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import {
   LayoutDashboard, Server, Globe, LogOut,
   ClipboardList, Settings, Users, Activity, DatabaseBackup, BarChart2, Layers, ShieldCheck, HardDrive, TerminalSquare,
-  Sun, Moon, MonitorDot, Search, ScrollText,
+  Sun, Moon, MonitorDot, Search, ScrollText, Container,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearToken } from "@/lib/api";
@@ -26,6 +26,7 @@ const links = [
   { href: "/terminal", label: "Terminal", icon: TerminalSquare },
   { href: "/monitor", label: "Monitor", icon: MonitorDot },
   { href: "/logs", label: "Logs", icon: ScrollText },
+  { href: "/nginx", label: "Nginx", icon: Container },
   { href: "/users", label: "Team", icon: Users },
   { href: "/security", label: "Security", icon: ShieldCheck },
   { href: "/settings", label: "Settings", icon: Settings },

@@ -227,8 +227,9 @@ func buildRouter(
 	terminalHandler := httptransport.NewTerminalHandler(serverRepo)
 	serverMetricsHandler := httptransport.NewServerMetricsHandler(serverRepo)
 	logsHandler := httptransport.NewLogsHandler(serverRepo)
+	nginxHandler := httptransport.NewNginxHandler(serverRepo)
 
-	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler, fileManagerHandler, terminalHandler, serverMetricsHandler, logsHandler)
+	httptransport.RegisterRoutes(engine, healthHandler, metricsHandler, devAuthHandler, authHandler, serverHandler, siteHandler, teamHandler, observabilityHandler, auditHandler, settingsHandler, userHandler, envHandler, webhookHandler, uptimeHandler, backupHandler, dashboardHandler, templateHandler, siteDomainHandler, apiTokenHandler, fileManagerHandler, terminalHandler, serverMetricsHandler, logsHandler, nginxHandler)
 
 	return engine
 }

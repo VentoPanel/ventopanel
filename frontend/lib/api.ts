@@ -922,6 +922,92 @@ export async function fmSetPermissions(
   );
 }
 
+// ── Nginx Manager ──────────────────────────────────────────────────────────────
+
+export interface NginxVhost {
+  name: string;
+  enabled: boolean;
+  path: string;
+}
+
+export interface NginxStatus {
+  active: boolean;
+  version: string;
+  config_test: string;
+}
+
+export async function fetchNginxStatus(serverId: string): Promise<NginxStatus> {
+  return apiFetch<NginxStatus>(`/servers/${serverId}/nginx/status`);
+}
+
+export async function fetchNginxVhosts(serverId: string): Promise<NginxVhost[]> {
+  return apiFetch<NginxVhost[]>(`/servers/${serverId}/nginx/vhosts`);
+}
+
+export async function fetchNginxVhost(serverId: string, name: string): Promise<{ name: string; content: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/vhosts/${encodeURIComponent(name)}`);
+}
+
+export async function saveNginxVhost(
+  serverId: string,
+  name: string,
+  content: string,
+): Promise<{ test_ok: boolean; test_output: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/vhosts/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function createNginxVhost(
+  serverId: string,
+  name: string,
+  content?: string,
+): Promise<{ name: string; path: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/vhosts`, {
+    method: "POST",
+    body: JSON.stringify({ name, content }),
+  });
+}
+
+export async function deleteNginxVhost(serverId: string, name: string): Promise<void> {
+  await apiFetch(`/servers/${serverId}/nginx/vhosts/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export async function enableNginxVhost(
+  serverId: string,
+  name: string,
+): Promise<{ test_ok: boolean; test_output: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/vhosts/${encodeURIComponent(name)}/enable`, { method: "POST" });
+}
+
+export async function disableNginxVhost(
+  serverId: string,
+  name: string,
+): Promise<{ test_ok: boolean; test_output: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/vhosts/${encodeURIComponent(name)}/disable`, { method: "POST" });
+}
+
+export async function testNginxConfig(serverId: string): Promise<{ ok: boolean; output: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/test`, { method: "POST" });
+}
+
+export async function reloadNginx(serverId: string): Promise<{ output: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/reload`, { method: "POST" });
+}
+
+export async function issueNginxCert(
+  serverId: string,
+  vhostName: string,
+  domain: string,
+  email?: string,
+): Promise<{ success: boolean; output: string }> {
+  return apiFetch(`/servers/${serverId}/nginx/vhosts/${encodeURIComponent(vhostName)}/ssl`, {
+    method: "POST",
+    body: JSON.stringify({ domain, email }),
+  });
+}
+
 // ── Log Viewer ─────────────────────────────────────────────────────────────────
 
 export async function fetchLogUnits(serverId: string): Promise<string[]> {

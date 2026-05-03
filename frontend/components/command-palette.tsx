@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Search, Server, Globe, HardDrive, TerminalSquare, MonitorDot,
   LayoutDashboard, ShieldCheck, Users, ClipboardList, Settings,
-  Activity, DatabaseBackup, BarChart2, Layers, ArrowRight, X, ScrollText,
+  Activity, DatabaseBackup, BarChart2, Layers, ArrowRight, X, ScrollText, Container,
 } from "lucide-react";
 import { fetchServers, fetchSites } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ const PAGES = [
   { id: "terminal",     label: "Web Terminal",   href: "/terminal",      icon: TerminalSquare,  group: "Pages" },
   { id: "monitor",      label: "Resource Monitor",href: "/monitor",      icon: MonitorDot,      group: "Pages" },
   { id: "logs",         label: "Log Viewer",     href: "/logs",          icon: ScrollText,      group: "Pages" },
+  { id: "nginx",        label: "Nginx Manager",  href: "/nginx",         icon: Container,       group: "Pages" },
   { id: "uptime",       label: "Uptime",         href: "/uptime",        icon: Activity,        group: "Pages" },
   { id: "observability",label: "Observability",  href: "/observability", icon: BarChart2,       group: "Pages" },
   { id: "templates",    label: "Templates",      href: "/templates",     icon: Layers,          group: "Pages" },
