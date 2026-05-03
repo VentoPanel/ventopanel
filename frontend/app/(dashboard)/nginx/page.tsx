@@ -13,15 +13,12 @@ import { toast } from "sonner";
 import { fetchServers, fetchNginxVhosts, fetchNginxStatus, fetchNginxVhost,
   saveNginxVhost, createNginxVhost, deleteNginxVhost,
   enableNginxVhost, disableNginxVhost, testNginxConfig,
-  reloadNginx, issueNginxCert, type NginxVhost, type NginxStatus } from "@/lib/api";
+  reloadNginx, issueNginxCert,
+  type Server, type NginxVhost, type NginxStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Server { id: string; name: string; ip_address: string; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -157,11 +154,14 @@ function EditorModal({
   const [testOk, setTestOk] = useState<boolean | null>(null);
 
   // Load config
-  const { isLoading } = useQuery({
+  const { isLoading, data: vhostData } = useQuery({
     queryKey: ["nginx-vhost-content", serverId, vhost.name],
     queryFn: () => fetchNginxVhost(serverId, vhost.name),
-    onSuccess: (data: { name: string; content: string }) => setContent(data.content),
-  } as Parameters<typeof useQuery>[0]);
+  });
+
+  useEffect(() => {
+    if (vhostData) setContent(vhostData.content);
+  }, [vhostData]);
 
   const saveMut = useMutation({
     mutationFn: () => saveNginxVhost(serverId, vhost.name, content ?? ""),
@@ -250,7 +250,7 @@ export default function NginxPage() {
 
   // Auto-select first server
   useEffect(() => {
-    if (!serverId && servers.length > 0) setServerId(servers[0].id);
+    if (!serverId && servers.length > 0) setServerId(servers[0].ID);
   }, [servers, serverId]);
 
   const { data: status, refetch: refetchStatus } = useQuery<NginxStatus>({
@@ -333,7 +333,7 @@ export default function NginxPage() {
                 onChange={e => setServerId(e.target.value)}
               >
                 {servers.map((s: Server) => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.ip_address})</option>
+                  <option key={s.ID} value={s.ID}>{s.Name} ({s.Host})</option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
