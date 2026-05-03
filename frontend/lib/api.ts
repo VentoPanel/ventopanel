@@ -958,26 +958,6 @@ export interface UptimeTrendPoint {
   avg_latency_ms: number;
 }
 
-export interface DeployTrendPoint {
-  day: string;
-  success: number;
-  failed: number;
-}
-
-export async function fetchDashboardSummary(): Promise<DashboardSummary> {
-  return apiFetch<DashboardSummary>("/dashboard/summary");
-}
-
-export async function fetchUptimeTrend(): Promise<UptimeTrendPoint[]> {
-  const data = await apiFetch<{ points: UptimeTrendPoint[] }>("/dashboard/uptime-trend");
-  return data.points ?? [];
-}
-
-export async function fetchDeployTrend(): Promise<DeployTrendPoint[]> {
-  const data = await apiFetch<{ points: DeployTrendPoint[] }>("/dashboard/deploy-trend");
-  return data.points ?? [];
-}
-
 // ── Nginx Manager ──────────────────────────────────────────────────────────────
 
 export interface NginxVhost {
