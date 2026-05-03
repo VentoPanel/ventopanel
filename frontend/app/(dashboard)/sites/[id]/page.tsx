@@ -166,6 +166,9 @@ export default function SiteDetailPage({
   const deploySite = useDeploySite();
   const deleteSite = useDeleteSite();
 
+  type SiteTab = "overview" | "deploys" | "config" | "events";
+  const [activeTab, setActiveTab] = useState<SiteTab>("overview");
+
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
@@ -523,6 +526,32 @@ export default function SiteDetailPage({
         </div>
       </div>
 
+      {/* Tab navigation */}
+      <div className="flex rounded-lg border bg-muted/40 p-1 gap-1 w-fit">
+        {([
+          { id: "overview", label: "Overview" },
+          { id: "deploys",  label: "Deploys" },
+          { id: "config",   label: "Config" },
+          { id: "events",   label: "Events" },
+        ] as { id: SiteTab; label: string }[]).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={cn(
+              "rounded-md px-4 py-1.5 text-sm font-medium transition-all duration-150",
+              activeTab === t.id
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── OVERVIEW TAB ─────────────────────────────────────────────────── */}
+      {activeTab === "overview" && (<>
+
       {/* Info cards */}
       {site && (
         <div className="grid gap-4 sm:grid-cols-4">
@@ -687,6 +716,10 @@ export default function SiteDetailPage({
           </CardContent>
         </Card>
       )}
+
+      </>)}
+      {/* ── CONFIG TAB ───────────────────────────────────────────────────── */}
+      {activeTab === "config" && (<>
 
       {/* ENV Variables — only for git-deployed sites */}
       {hasRepo && (
@@ -905,6 +938,10 @@ export default function SiteDetailPage({
         </CardContent>
       </Card>
 
+      </>)}
+      {/* ── OVERVIEW TAB (container + uptime) ────────────────────────────── */}
+      {activeTab === "overview" && (<>
+
       {/* Container status — always visible */}
       <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -1111,6 +1148,10 @@ export default function SiteDetailPage({
         </CardContent>
       </Card>
 
+      </>)}
+      {/* ── DEPLOYS TAB ──────────────────────────────────────────────────── */}
+      {activeTab === "deploys" && (<>
+
       {/* Deploy History */}
       <Card>
         <CardHeader className="pb-3">
@@ -1230,6 +1271,10 @@ export default function SiteDetailPage({
         </CardContent>
       </Card>
 
+      </>)}
+      {/* ── EVENTS TAB ───────────────────────────────────────────────────── */}
+      {activeTab === "events" && (<>
+
       {/* Audit history */}
       <div>
         <div className="mb-3 flex items-center justify-between">
@@ -1299,6 +1344,8 @@ export default function SiteDetailPage({
           </Button>
         )}
       </div>
+
+      </>)}
 
       {/* Modals */}
       <SiteForm

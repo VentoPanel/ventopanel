@@ -14,6 +14,13 @@ import {
   Globe,
   Container,
   ExternalLink,
+  Terminal,
+  ScrollText,
+  FolderOpen,
+  CheckCircle2,
+  XCircle,
+  Activity,
+  ArrowRight,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,6 +30,7 @@ import {
   type ServerSite,
   type ServerContainer,
 } from "@/lib/api";
+import { useAuditEvents } from "@/hooks/use-audit";
 import { useServerStats } from "@/hooks/use-server-stats";
 import { useConnectServer, useProvisionServer } from "@/hooks/use-server-mutations";
 import { useAuth } from "@/hooks/use-auth";
@@ -111,6 +119,12 @@ export default function ServerDetailPage({
   const { canWrite } = useAuth();
   const connectServer = useConnectServer();
   const provisionServer = useProvisionServer();
+
+  const {
+    data: auditData,
+    isLoading: auditLoading,
+  } = useAuditEvents({ resource_type: "server", resource_id: id });
+  const auditEvents = auditData?.pages.flatMap(p => p.items) ?? [];
 
   const { data: serverSites = [] } = useQuery<ServerSite[]>({
     queryKey: ["server-sites", id],
@@ -212,6 +226,35 @@ export default function ServerDetailPage({
             </>
           )}
         </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/terminal?server=${id}`}>
+            <Terminal className="mr-2 h-3.5 w-3.5" />Terminal
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/logs?server=${id}`}>
+            <ScrollText className="mr-2 h-3.5 w-3.5" />Logs
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/files?server=${id}`}>
+            <FolderOpen className="mr-2 h-3.5 w-3.5" />Files
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/nginx?server=${id}`}>
+            <Globe className="mr-2 h-3.5 w-3.5" />Nginx
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/monitor?server=${id}`}>
+            <Activity className="mr-2 h-3.5 w-3.5" />Monitor
+          </Link>
+        </Button>
       </div>
 
       {/* Server info */}
@@ -480,6 +523,71 @@ export default function ServerDetailPage({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Server audit events */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <Activity className="h-4 w-4 text-muted-foreground" />
+            Recent Events
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {auditEvents.length} loaded
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {auditLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {!auditLoading && auditEvents.length === 0 && (
+            <p className="text-sm text-muted-foreground">No events yet for this server.</p>
+          )}
+          {auditEvents.length > 0 && (
+            <div className="border-l-2 border-border pl-4 space-y-0">
+              {auditEvents.slice(0, 10).map((e) => {
+                const to = e.ToStatus.toLowerCase();
+                const isOk  = ["connected","provisioned","ready_for_deploy"].includes(to);
+                const isErr = to.includes("fail") || to === "error";
+                const lineColor = isOk ? "border-green-500/40" : isErr ? "border-destructive/40" : "border-border";
+                return (
+                  <div key={e.ID} className={cn("relative border-l-2 -ml-[17px] pl-4 pb-4 last:pb-0", lineColor)}>
+                    <div className="absolute -left-[9px] top-0.5 flex h-4 w-4 items-center justify-center rounded-full border bg-background">
+                      {isErr  ? <XCircle    className="h-3 w-3 text-destructive" /> :
+                       isOk   ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
+                                <Activity   className="h-3 w-3 text-muted-foreground" />}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      {e.FromStatus && (
+                        <>
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{e.FromStatus}</span>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                        </>
+                      )}
+                      <span className={cn(
+                        "rounded px-1.5 py-0.5 font-medium",
+                        isOk  && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+                        isErr && "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+                        !isOk && !isErr && "bg-muted text-muted-foreground",
+                      )}>
+                        {e.ToStatus}
+                      </span>
+                      {e.Reason && <span className="text-muted-foreground truncate max-w-[200px]">{e.Reason}</span>}
+                      <span className="ml-auto text-muted-foreground shrink-0">
+                        {new Date(e.CreatedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {auditEvents.length > 0 && (
+            <div className="mt-3 pt-3 border-t">
+              <Link href="/audit" className="text-xs text-muted-foreground hover:text-foreground underline">
+                View full audit log →
+              </Link>
             </div>
           )}
         </CardContent>
