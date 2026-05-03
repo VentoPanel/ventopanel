@@ -922,6 +922,62 @@ export async function fmSetPermissions(
   );
 }
 
+// ── Dashboard ──────────────────────────────────────────────────────────────────
+
+export interface DashboardSummary {
+  sites: {
+    total: number;
+    deployed: number;
+    failed: number;
+    deploying: number;
+    other: number;
+  };
+  servers: {
+    total: number;
+    connected: number;
+    failed: number;
+    other: number;
+  };
+  uptime: {
+    sites_up: number;
+    sites_down: number;
+    avg_pct: number;
+  };
+  deploys: {
+    today_24h_success: number;
+    today_24h_failed: number;
+    all_time_success: number;
+    all_time_failed: number;
+  };
+}
+
+export interface UptimeTrendPoint {
+  hour: string;
+  up_count: number;
+  down_count: number;
+  avg_latency_ms: number;
+}
+
+export interface DeployTrendPoint {
+  day: string;
+  success: number;
+  failed: number;
+}
+
+export async function fetchDashboardSummary(): Promise<DashboardSummary> {
+  return apiFetch<DashboardSummary>("/dashboard/summary");
+}
+
+export async function fetchUptimeTrend(): Promise<UptimeTrendPoint[]> {
+  const data = await apiFetch<{ points: UptimeTrendPoint[] }>("/dashboard/uptime-trend");
+  return data.points ?? [];
+}
+
+export async function fetchDeployTrend(): Promise<DeployTrendPoint[]> {
+  const data = await apiFetch<{ points: DeployTrendPoint[] }>("/dashboard/deploy-trend");
+  return data.points ?? [];
+}
+
 // ── Nginx Manager ──────────────────────────────────────────────────────────────
 
 export interface NginxVhost {
