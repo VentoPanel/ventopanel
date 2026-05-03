@@ -141,7 +141,7 @@ function MobileNav({ pathname }: { pathname: string }) {
     return () => { document.body.style.overflow = ""; };
   }, [open]);
 
-  const currentPage = links.find(l => l.pathname === pathname || l.href === pathname);
+  const currentPage = links.find(l => l.href === pathname);
 
   return (
     <>
