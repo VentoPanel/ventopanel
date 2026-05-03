@@ -53,3 +53,83 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ── Page fade-in ─────────────────────────────────────────────────────────── */
+@layer utilities {
+  .animate-in {
+    animation-fill-mode: both;
+  }
+  .fade-in {
+    animation-name: fadeIn;
+  }
+  .slide-in-from-bottom-4 {
+    animation-name: slideInFromBottom;
+  }
+  .duration-300 {
+    animation-duration: 300ms;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes slideInFromBottom {
+    from { opacity: 0; transform: translateY(1rem); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* ── Status pulse dots ────────────────────────────────────────────────────── */
+@layer components {
+  /* Usage: <span class="status-dot status-dot--active" /> */
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full shrink-0;
+  }
+  .status-dot--active {
+    @apply bg-green-500;
+    box-shadow: 0 0 0 0 rgba(34,197,94,0.7);
+    animation: pulse-green 2s infinite;
+  }
+  .status-dot--deploying {
+    @apply bg-blue-500;
+    box-shadow: 0 0 0 0 rgba(59,130,246,0.7);
+    animation: pulse-blue 1.2s infinite;
+  }
+  .status-dot--error {
+    @apply bg-red-500;
+  }
+  .status-dot--idle {
+    @apply bg-muted-foreground/40;
+  }
+
+  @keyframes pulse-green {
+    0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+    70%  { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+    100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+  }
+  @keyframes pulse-blue {
+    0%   { box-shadow: 0 0 0 0 rgba(59,130,246,0.6); }
+    70%  { box-shadow: 0 0 0 6px rgba(59,130,246,0); }
+    100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+  }
+}
+
+/* ── Smooth scrollbar ─────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track  { background: transparent; }
+  ::-webkit-scrollbar-thumb  { background: hsl(var(--border)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.4); }
+}
+
+/* ── Card hover lift ──────────────────────────────────────────────────────── */
+@layer components {
+  .card-hover {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md;
+  }
+}

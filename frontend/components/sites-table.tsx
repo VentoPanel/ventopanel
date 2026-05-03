@@ -31,9 +31,11 @@ function statusVariant(
   switch (status.toLowerCase()) {
     case "deployed":
     case "active":
+    case "ssl_pending":
       return "success";
     case "error":
     case "failed":
+    case "deploy_failed":
       return "destructive";
     case "deploying":
     case "pending":
@@ -41,6 +43,19 @@ function statusVariant(
     default:
       return "secondary";
   }
+}
+
+function StatusDot({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  const dotClass =
+    s === "deployed" || s === "active" || s === "ssl_pending"
+      ? "status-dot status-dot--active"
+      : s === "deploying" || s === "pending"
+      ? "status-dot status-dot--deploying"
+      : s.includes("failed") || s === "error"
+      ? "status-dot status-dot--error"
+      : "status-dot status-dot--idle";
+  return <span className={dotClass} />;
 }
 
 export function SitesTable() {
@@ -109,7 +124,10 @@ export function SitesTable() {
               <TableCell className="font-mono text-xs">{s.Domain}</TableCell>
               <TableCell className="capitalize">{s.Runtime}</TableCell>
               <TableCell>
-                <Badge variant={statusVariant(s.Status)}>{s.Status}</Badge>
+                <div className="flex items-center gap-2">
+                  <StatusDot status={s.Status} />
+                  <Badge variant={statusVariant(s.Status)}>{s.Status}</Badge>
+                </div>
               </TableCell>
               <TableCell>
                 <div className="flex justify-end gap-1">

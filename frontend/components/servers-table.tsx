@@ -32,9 +32,12 @@ function statusVariant(
   switch (status.toLowerCase()) {
     case "connected":
     case "provisioned":
+    case "ready_for_deploy":
       return "success";
     case "error":
     case "failed":
+    case "connection_failed":
+    case "provision_failed":
       return "destructive";
     case "pending":
     case "provisioning":
@@ -42,6 +45,19 @@ function statusVariant(
     default:
       return "secondary";
   }
+}
+
+function StatusDot({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  const dotClass =
+    s === "connected" || s === "provisioned" || s === "ready_for_deploy"
+      ? "status-dot status-dot--active"
+      : s === "provisioning" || s === "deploying" || s === "pending"
+      ? "status-dot status-dot--deploying"
+      : s.includes("failed") || s === "error"
+      ? "status-dot status-dot--error"
+      : "status-dot status-dot--idle";
+  return <span className={dotClass} />;
 }
 
 export function ServersTable() {
@@ -123,7 +139,10 @@ export function ServersTable() {
               </TableCell>
               <TableCell className="capitalize">{s.Provider}</TableCell>
               <TableCell>
-                <Badge variant={statusVariant(s.Status)}>{s.Status}</Badge>
+                <div className="flex items-center gap-2">
+                  <StatusDot status={s.Status} />
+                  <Badge variant={statusVariant(s.Status)}>{s.Status}</Badge>
+                </div>
               </TableCell>
               <TableCell>{s.SSHUser}</TableCell>
               <TableCell>
