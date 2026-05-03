@@ -20,9 +20,10 @@ export default function DashboardLayout({
   }, [router]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    // Desktop: side-by-side (flex-row). Mobile: stacked (flex-col).
+    <div className="flex h-screen flex-col overflow-hidden lg:flex-row">
       <Nav />
-      <main className="flex-1 overflow-y-auto p-8">{children}</main>
+      <main className="flex-1 overflow-y-auto p-4 lg:p-8">{children}</main>
       <CommandPalette />
     </div>
   );

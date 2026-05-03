@@ -561,7 +561,7 @@ function FilesPageInner() {
           )}
 
           {!isLoading && items.length > 0 && (
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[480px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
                   <th className="w-10 px-3 py-2">

@@ -390,8 +390,8 @@ export default function NginxPage() {
             </Button>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full min-w-[560px] text-sm">
               <thead className="bg-muted/50">
                 <tr>
                   <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Name</th>

@@ -94,7 +94,8 @@ export function ServersTable() {
 
   return (
     <>
-      <Table>
+      <div className="overflow-x-auto">
+      <Table className="min-w-[600px]">
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
@@ -177,6 +178,7 @@ export function ServersTable() {
           ))}
         </TableBody>
       </Table>
+      </div>
 
       <ServerForm
         open={editOpen}

@@ -83,7 +83,8 @@ export function SitesTable() {
 
   return (
     <>
-      <Table>
+      <div className="overflow-x-auto">
+      <Table className="min-w-[560px]">
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
@@ -153,6 +154,7 @@ export function SitesTable() {
           ))}
         </TableBody>
       </Table>
+      </div>
 
       <SiteForm
         open={editOpen}
