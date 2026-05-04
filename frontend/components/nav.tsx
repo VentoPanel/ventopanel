@@ -9,7 +9,7 @@ import {
   ClipboardList, Settings, Users, Activity, DatabaseBackup,
   BarChart2, Layers, ShieldCheck, HardDrive, TerminalSquare,
   Sun, Moon, MonitorDot, Search, ScrollText, Container,
-  Menu, X,
+  Menu, X, UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearToken } from "@/lib/api";
@@ -87,6 +87,14 @@ function BottomActions({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="mt-auto flex flex-col gap-1 border-t pt-2">
+      <Link
+        href="/profile"
+        onClick={onNavigate}
+        className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+      >
+        <UserCircle className="h-4 w-4" />
+        Profile
+      </Link>
       <button
         onClick={() => setTheme(isDark ? "light" : "dark")}
         className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors w-full"

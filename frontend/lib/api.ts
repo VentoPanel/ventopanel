@@ -391,6 +391,37 @@ export async function updateNotificationSettings(
   });
 }
 
+export async function testNotification(): Promise<void> {
+  await apiFetch("/settings/notifications/test", { method: "POST" });
+}
+
+// Profile
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: string;
+  totp_enabled: boolean;
+  created_at: string;
+}
+
+export async function fetchMe(): Promise<UserProfile> {
+  return apiFetch<UserProfile>("/users/me");
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await apiFetch("/users/me/password", {
+    method: "PATCH",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+export async function changeEmail(email: string, password: string): Promise<void> {
+  await apiFetch("/users/me/email", {
+    method: "PATCH",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
 export async function deploySite(id: string): Promise<{ status: string }> {
   return apiFetch<{ status: string }>(`/sites/${id}/deploy`, {
     method: "POST",

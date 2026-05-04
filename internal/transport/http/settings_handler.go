@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -9,12 +10,17 @@ import (
 	settingsdomain "github.com/your-org/ventopanel/internal/domain/settings"
 )
 
-type SettingsHandler struct {
-	repo settingsdomain.Repository
+type notifier interface {
+	NotifyAll(ctx context.Context, message string) error
 }
 
-func NewSettingsHandler(repo settingsdomain.Repository) *SettingsHandler {
-	return &SettingsHandler{repo: repo}
+type SettingsHandler struct {
+	repo     settingsdomain.Repository
+	alertSvc notifier
+}
+
+func NewSettingsHandler(repo settingsdomain.Repository, alertSvc notifier) *SettingsHandler {
+	return &SettingsHandler{repo: repo, alertSvc: alertSvc}
 }
 
 type notificationSettingsRequest struct {
@@ -141,6 +147,22 @@ func (h *SettingsHandler) UpdateNotifications(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
+// TestNotification sends a test message via all configured notifiers.
+func (h *SettingsHandler) TestNotification(c *gin.Context) {
+	if !h.requireAdmin(c) {
+		return
+	}
+	if h.alertSvc == nil {
+		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "alert service not configured"})
+		return
+	}
+	if err := h.alertSvc.NotifyAll(c.Request.Context(), "🔔 <b>VentoPanel</b> — test notification. Everything is working!"); err != nil {
+		c.JSON(http.StatusBadGateway, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "sent"})
 }
 
 func max(a, b int) int {

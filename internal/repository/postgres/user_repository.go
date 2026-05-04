@@ -110,6 +110,30 @@ func (r *UserRepository) UpdateTOTP(ctx context.Context, id, secret string, enab
 	return nil
 }
 
+func (r *UserRepository) UpdatePassword(ctx context.Context, id, newHash string) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, newHash, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) UpdateEmail(ctx context.Context, id, email string) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2`, email, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func (r *UserRepository) Delete(ctx context.Context, id string) error {
 	tag, err := r.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
 	if err != nil {

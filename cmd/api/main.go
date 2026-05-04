@@ -211,7 +211,7 @@ func buildRouter(
 	teamHandler := httptransport.NewTeamHandler(teamService)
 	observabilityHandler := httptransport.NewObservabilityHandler(sslService)
 	auditHandler := httptransport.NewAuditHandler(auditService)
-	settingsHandler := httptransport.NewSettingsHandler(settingsRepo)
+	settingsHandler := httptransport.NewSettingsHandler(settingsRepo, alertService)
 	userHandler := httptransport.NewUserHandler(userRepo)
 	envHandler := httptransport.NewEnvHandler(envRepo, teamService)
 	webhookHandler := httptransport.NewWebhookHandler(siteRepo, deployService)

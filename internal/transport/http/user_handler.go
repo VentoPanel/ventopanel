@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 
 	domain "github.com/your-org/ventopanel/internal/domain/user"
 )
@@ -16,6 +17,96 @@ type UserHandler struct {
 
 func NewUserHandler(repo domain.Repository) *UserHandler {
 	return &UserHandler{repo: repo}
+}
+
+// GetMe returns the current authenticated user's profile.
+func (h *UserHandler) GetMe(c *gin.Context) {
+	uid, ok := c.Get(contextUserIDKey)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "not authenticated"})
+		return
+	}
+	u, err := h.repo.GetByID(c.Request.Context(), uid.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":           u.ID,
+		"email":        u.Email,
+		"role":         u.Role,
+		"totp_enabled": u.TOTPEnabled,
+		"created_at":   u.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	})
+}
+
+// ChangePassword updates the current user's password after verifying the current one.
+func (h *UserHandler) ChangePassword(c *gin.Context) {
+	uid, ok := c.Get(contextUserIDKey)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "not authenticated"})
+		return
+	}
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password"     binding:"required,min=8"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+
+	u, err := h.repo.GetByID(c.Request.Context(), uid.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.CurrentPassword)) != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: domain.ErrWrongPassword.Error()})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "failed to hash password"})
+		return
+	}
+	if err := h.repo.UpdatePassword(c.Request.Context(), uid.(string), string(hash)); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "password updated"})
+}
+
+// ChangeEmail updates the current user's email after verifying their password.
+func (h *UserHandler) ChangeEmail(c *gin.Context) {
+	uid, ok := c.Get(contextUserIDKey)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "not authenticated"})
+		return
+	}
+	var req struct {
+		Email    string `json:"email"    binding:"required,email"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+
+	u, err := h.repo.GetByID(c.Request.Context(), uid.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: domain.ErrWrongPassword.Error()})
+		return
+	}
+	if err := h.repo.UpdateEmail(c.Request.Context(), uid.(string), strings.ToLower(strings.TrimSpace(req.Email))); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "email updated"})
 }
 
 func (h *UserHandler) requireAdminRole(c *gin.Context) bool {

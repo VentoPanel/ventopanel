@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, Send, MessageSquare, Save, Eye, EyeOff, Activity, Rocket } from "lucide-react";
+import { Settings, Send, MessageSquare, Save, Eye, EyeOff, Activity, Rocket, FlaskConical, Loader2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchNotificationSettings,
   updateNotificationSettings,
+  testNotification,
   type NotificationSettings,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -95,6 +96,12 @@ export default function SettingsPage() {
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Failed to save");
     },
+  });
+
+  const { mutate: sendTest, isPending: testing } = useMutation({
+    mutationFn: testNotification,
+    onSuccess: () => toast.success("Test notification sent — check your Telegram/WhatsApp"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to send test"),
   });
 
   function handleSubmit(e: React.FormEvent) {
@@ -328,7 +335,17 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => sendTest()}
+            disabled={testing || isLoading}
+          >
+            {testing
+              ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending…</>
+              : <><FlaskConical className="mr-2 h-4 w-4" />Send test</>}
+          </Button>
           <Button type="submit" disabled={saving || isLoading}>
             <Save className="mr-2 h-4 w-4" />
             {saving ? "Saving…" : "Save Settings"}
