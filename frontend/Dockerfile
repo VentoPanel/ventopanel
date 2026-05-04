@@ -26,6 +26,6 @@ ENV HOSTNAME="0.0.0.0"
 
 # Restart container automatically if Next.js stops responding to HTTP.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:3000/ || exit 1
+  CMD wget -qO- http://127.0.0.1:3000/ || exit 1
 
 CMD ["node", "server.js"]
