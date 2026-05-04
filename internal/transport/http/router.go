@@ -139,6 +139,7 @@ func RegisterRoutes(
 		api.GET("/users/me", userHandler.GetMe)
 		api.PATCH("/users/me/password", userHandler.ChangePassword)
 		api.PATCH("/users/me/email", userHandler.ChangeEmail)
+		api.POST("/users/invite", userHandler.Invite)
 		api.GET("/users", userHandler.List)
 		api.PATCH("/users/:id/role", userHandler.UpdateRole)
 		api.DELETE("/users/:id", userHandler.Delete)

@@ -11,6 +11,55 @@ import (
 	domain "github.com/your-org/ventopanel/internal/domain/user"
 )
 
+// Invite creates a new user with a specified role. Admin only.
+func (h *UserHandler) Invite(c *gin.Context) {
+	if !h.requireAdminRole(c) {
+		return
+	}
+	var req struct {
+		Email    string `json:"email"    binding:"required"`
+		Password string `json:"password" binding:"required,min=8"`
+		Role     string `json:"role"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(req.Role))
+	if role != domain.RoleAdmin && role != domain.RoleEditor && role != domain.RoleViewer {
+		role = domain.RoleViewer
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "failed to hash password"})
+		return
+	}
+
+	// Derive team_id from the inviting user's token context.
+	tid, _ := c.Get(contextTeamIDKey)
+	teamID, _ := tid.(string)
+
+	u := &domain.User{
+		Email:        strings.ToLower(strings.TrimSpace(req.Email)),
+		PasswordHash: string(hash),
+		TeamID:       teamID,
+		Role:         role,
+	}
+	if err := h.repo.Create(c.Request.Context(), u); err != nil {
+		if errors.Is(err, domain.ErrEmailTaken) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "email already registered"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"id":    u.ID,
+		"email": u.Email,
+		"role":  u.Role,
+	})
+}
+
 type UserHandler struct {
 	repo domain.Repository
 }

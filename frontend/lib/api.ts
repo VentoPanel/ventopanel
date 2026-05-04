@@ -816,10 +816,10 @@ export async function verifyMFA(mfa_session: string, code: string): Promise<{ to
   });
 }
 
-export async function inviteUser(email: string, password: string, team_id: string): Promise<{ id: string; email: string; role: string }> {
-  return apiFetch("/auth/register", {
+export async function inviteUser(email: string, password: string, role: string): Promise<{ id: string; email: string; role: string }> {
+  return apiFetch("/users/invite", {
     method: "POST",
-    body: JSON.stringify({ email, password, team_id }),
+    body: JSON.stringify({ email, password, role }),
   });
 }
 

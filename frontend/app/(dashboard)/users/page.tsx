@@ -18,7 +18,6 @@ import {
   inviteUser,
   type User,
 } from "@/lib/api";
-import { getTokenPayload } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Card,
@@ -74,10 +73,8 @@ export default function UsersPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [invite, setInvite] = useState({ email: "", password: "", role: "viewer" });
 
-  const teamID = getTokenPayload()?.tid ?? "";
-
   const inviteMutation = useMutation({
-    mutationFn: () => inviteUser(invite.email, invite.password, teamID),
+    mutationFn: () => inviteUser(invite.email, invite.password, invite.role),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });
       toast.success(`Invited ${invite.email}`);

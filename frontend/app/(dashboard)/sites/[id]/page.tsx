@@ -116,6 +116,121 @@ function formatDate(iso: string) {
   });
 }
 
+// ── Webhook integration guide ──────────────────────────────────────────────────
+
+type WebhookTab = "github-webhook" | "github-actions" | "gitlab-ci";
+
+function WebhookGuide({ webhookURL, siteBranch }: { webhookURL: string; siteBranch: string }) {
+  const [tab, setTab] = useState<WebhookTab>("github-webhook");
+  const [copied, setCopied] = useState(false);
+
+  const ghaYaml = `name: Deploy
+
+on:
+  push:
+    branches: ["${siteBranch}"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger VentoPanel deploy
+        run: |
+          curl -s -X POST \\
+            -H "Content-Type: application/json" \\
+            -d '{"ref":"refs/heads/${siteBranch}"}' \\
+            "${webhookURL}"`;
+
+  const gitlabYaml = `deploy:
+  stage: deploy
+  only:
+    - ${siteBranch}
+  script:
+    - |
+      curl -s -X POST \\
+        -H "Content-Type: application/json" \\
+        -d '{"ref":"refs/heads/${siteBranch}"}' \\
+        "${webhookURL}"`;
+
+  async function copyYaml(text: string) {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const tabs: { id: WebhookTab; label: string }[] = [
+    { id: "github-webhook", label: "GitHub Webhook" },
+    { id: "github-actions", label: "GitHub Actions" },
+    { id: "gitlab-ci",      label: "GitLab CI" },
+  ];
+
+  return (
+    <div className="rounded-md border bg-muted/40 text-xs">
+      {/* Tab bar */}
+      <div className="flex border-b">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-3 py-2 font-medium transition-colors ${
+              tab === t.id
+                ? "border-b-2 border-primary text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-3 space-y-2 text-muted-foreground">
+        {tab === "github-webhook" && (
+          <>
+            <p className="font-medium text-foreground">GitHub Webhook setup:</p>
+            <p>1. Go to your repository → <strong>Settings → Webhooks → Add webhook</strong></p>
+            <p>2. <strong>Payload URL</strong>: paste the URL above</p>
+            <p>3. <strong>Content type</strong>: <code className="bg-muted px-1 rounded">application/json</code></p>
+            <p>4. <strong>Events</strong>: Just the push event</p>
+            <p>5. Save — every <code className="bg-muted px-1 rounded">git push</code> to <strong>{siteBranch}</strong> triggers auto-deploy</p>
+          </>
+        )}
+
+        {tab === "github-actions" && (
+          <>
+            <p className="font-medium text-foreground">Add to <code className="bg-muted px-1 rounded">.github/workflows/deploy.yml</code>:</p>
+            <div className="relative">
+              <pre className="rounded bg-muted p-3 text-[11px] overflow-x-auto font-mono leading-relaxed">{ghaYaml}</pre>
+              <button
+                onClick={() => copyYaml(ghaYaml)}
+                className="absolute right-2 top-2 rounded bg-background px-2 py-1 text-[10px] border hover:bg-accent"
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <p>Commits on <strong>{siteBranch}</strong> will trigger a deploy automatically.</p>
+          </>
+        )}
+
+        {tab === "gitlab-ci" && (
+          <>
+            <p className="font-medium text-foreground">Add to <code className="bg-muted px-1 rounded">.gitlab-ci.yml</code>:</p>
+            <div className="relative">
+              <pre className="rounded bg-muted p-3 text-[11px] overflow-x-auto font-mono leading-relaxed">{gitlabYaml}</pre>
+              <button
+                onClick={() => copyYaml(gitlabYaml)}
+                className="absolute right-2 top-2 rounded bg-background px-2 py-1 text-[10px] border hover:bg-accent"
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <p>Pushes to <strong>{siteBranch}</strong> branch will trigger the deploy stage.</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SiteDetailPage({
   params,
 }: {
@@ -832,33 +947,24 @@ export default function SiteDetailPage({
           <CardContent className="space-y-3">
             {currentToken ? (
               <>
+                {/* URL + copy */}
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
                     {webhookURL}
                   </code>
                   <Button variant="outline" size="sm" onClick={handleCopyWebhook}>
-                    {copied
-                      ? <Check className="h-3.5 w-3.5 text-green-600" />
-                      : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
-                <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1.5">
-                  <p className="font-medium text-foreground">GitHub setup:</p>
-                  <p>1. Repository → Settings → Webhooks → Add webhook</p>
-                  <p>2. Payload URL: paste the URL above</p>
-                  <p>3. Content type: <code className="bg-muted px-1 rounded">application/json</code></p>
-                  <p>4. Events: <strong>Just the push event</strong></p>
-                  <p>5. Save — every <code className="bg-muted px-1 rounded">git push</code> triggers auto-deploy</p>
-                </div>
+
+                {/* Integration tabs */}
+                <WebhookGuide webhookURL={webhookURL} siteBranch={site?.Branch || "main"} />
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
                 No webhook token yet.{" "}
                 {canWrite && (
-                  <button
-                    className="underline hover:text-foreground"
-                    onClick={handleRegenerate}
-                  >
+                  <button className="underline hover:text-foreground" onClick={handleRegenerate}>
                     Generate one
                   </button>
                 )}
