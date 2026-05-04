@@ -127,7 +127,7 @@ func main() {
 	backupService := backupsvc.NewService(pgPool, cfg.BackupDir, cfg.BackupKeepCount, alertService)
 	dashboardRepo := postgresrepo.NewDashboardRepository(pgPool)
 
-	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo, apiTokenRepo, serverRepo, cfg.FileManagerRoot)
+	engine := buildRouter(cfg, logger, authService, serverService, siteService, teamService, deployService, provisionService, sslService, auditService, statusEventRepo, taskLogRepo, settingsRepo, alertService, userRepo, envRepo, siteRepo, uptimeRepo, backupService, dashboardRepo, siteDomainRepo, apiTokenRepo, serverRepo, cfg.FileManagerRoot)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           engine,
@@ -174,6 +174,7 @@ func buildRouter(
 	statusEventRepo *postgresrepo.StatusEventRepository,
 	taskLogRepo *postgresrepo.TaskLogRepository,
 	settingsRepo *postgresrepo.SettingsRepository,
+	alertService *alertsvc.Service,
 	userRepo *postgresrepo.UserRepository,
 	envRepo *postgresrepo.EnvRepository,
 	siteRepo *postgresrepo.SiteRepository,
