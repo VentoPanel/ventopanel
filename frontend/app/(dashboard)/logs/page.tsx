@@ -98,16 +98,14 @@ export default function LogsPage() {
     if (source === "docker")  params.set("container", container);
     if (source === "file")    params.set("path", filePath);
 
-    // Mirror the terminal: derive HTTP base from env vars or use same hostname
-    // on port 8080 to connect directly to the Go API, bypassing the Next.js
-    // proxy (which can buffer SSE responses and delay events).
+    // SSE goes via Nginx → api:8080 with proxy_buffering off.
+    // Use current window origin so port 8080 does not need to be public.
     function getApiBase(): string {
       const ws = process.env.NEXT_PUBLIC_API_WS_URL?.trim();
       if (ws) return ws.replace(/^ws(s?):\/\//, "http$1://").replace(/\/$/, "");
       const base = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
       if (base) return base.replace(/\/$/, "");
-      const proto = window.location.protocol;
-      return `${proto}//${window.location.hostname}:8080`;
+      return window.location.origin;
     }
     const url = `${getApiBase()}/api/v1/servers/${sid}/logs/stream?${params}&token=${encodeURIComponent(token)}`;
 

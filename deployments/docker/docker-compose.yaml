@@ -60,8 +60,8 @@ services:
     volumes:
       - backup_data:/data/backups
       - www_data:/var/www
-    ports:
-      - "127.0.0.1:8080:8080"
+    expose:
+      - "8080"
     deploy:
       resources:
         limits:
@@ -73,24 +73,39 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ventopanel-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - api
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 64M
+    restart: unless-stopped
+
   frontend:
     build:
       context: ../../frontend
       dockerfile: Dockerfile
     container_name: ventopanel-frontend
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       API_URL: ${API_URL:-http://api:8080}
-      # NEXT_PUBLIC_API_WS_URL is the WebSocket base the *browser* uses to reach the Go API directly.
-      # It must be reachable from the client — set to your domain/IP with port 8080 if behind Nginx.
-      # Example: NEXT_PUBLIC_API_WS_URL=wss://panel.example.com (if Nginx proxies WebSocket)
-      # Default: ws://<same host>:8080  (direct to API port, works when port 8080 is exposed)
+      # NEXT_PUBLIC_API_WS_URL — override only if using a custom domain with HTTPS.
+      # Default: derived from window.location.host (Nginx proxies WebSocket to api:8080).
+      # Example: NEXT_PUBLIC_API_WS_URL=wss://panel.example.com
       NEXT_PUBLIC_API_WS_URL: ${NEXT_PUBLIC_API_WS_URL:-}
-      # NEXT_PUBLIC_API_BASE_URL is the HTTP base the *browser* uses to reach the Go API directly
-      # for SSE endpoints (Resource Monitor, Log Viewer). Must match host/port accessible from the browser.
-      # Example: NEXT_PUBLIC_API_BASE_URL=https://panel.example.com (if Nginx proxies /api)
-      # Default: http://<same host>:8080
+      # NEXT_PUBLIC_API_BASE_URL — override only if using a custom domain with HTTPS.
+      # Default: derived from window.location.origin (Nginx proxies SSE to api:8080).
+      # Example: NEXT_PUBLIC_API_BASE_URL=https://panel.example.com
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
     depends_on:
       - api
