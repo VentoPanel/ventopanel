@@ -72,6 +72,7 @@ services:
           memory: 64M
     security_opt:
       - no-new-privileges:true
+    restart: unless-stopped
 
   nginx:
     image: nginx:1.27-alpine
