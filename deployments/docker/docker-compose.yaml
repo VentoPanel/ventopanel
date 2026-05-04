@@ -15,6 +15,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -24,6 +25,7 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+    restart: unless-stopped
 
   api:
     build:
@@ -37,9 +39,9 @@ services:
         condition: service_started
     environment:
       APP_NAME: ${APP_NAME:-VentoPanel}
-      APP_ENV: ${APP_ENV:-development}
+      APP_ENV: ${APP_ENV:-production}
       HTTP_PORT: ${HTTP_PORT:-8080}
-      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       POSTGRES_DSN: ${POSTGRES_DSN:-postgres://vento:vento@postgres:5432/ventopanel?sslmode=disable}
       REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
@@ -121,6 +123,7 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: false
+    restart: unless-stopped
     tmpfs:
       - /var/tmp:size=16m,mode=1777,noexec
       - /tmp:size=32m,mode=1777,noexec
