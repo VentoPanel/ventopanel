@@ -5,9 +5,9 @@ services:
     environment:
       POSTGRES_DB: ventopanel
       POSTGRES_USER: vento
-      POSTGRES_PASSWORD: vento
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vento}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,8 +19,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ventopanel-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-changeme}"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
 
@@ -41,6 +42,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-debug}
       POSTGRES_DSN: ${POSTGRES_DSN:-postgres://vento:vento@postgres:5432/ventopanel?sslmode=disable}
       REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
       REDIS_DB: ${REDIS_DB:-0}
       SSH_DIAL_TIMEOUT: ${SSH_DIAL_TIMEOUT:-10s}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}

@@ -17,10 +17,11 @@ import (
 
 type Server = asynq.Server
 
-func NewAsynq(redisAddr string, redisDB int) (*asynq.Client, *asynq.Server) {
+func NewAsynq(redisAddr, redisPassword string, redisDB int) (*asynq.Client, *asynq.Server) {
 	opt := asynq.RedisClientOpt{
-		Addr: redisAddr,
-		DB:   redisDB,
+		Addr:     redisAddr,
+		Password: redisPassword,
+		DB:       redisDB,
 	}
 
 	client := asynq.NewClient(opt)

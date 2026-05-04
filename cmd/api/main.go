@@ -57,14 +57,14 @@ func main() {
 	}
 	logger.Info().Msg("database migrations applied")
 
-	redisClient := db.NewRedis(cfg.RedisAddr, cfg.RedisDB)
+	redisClient := db.NewRedis(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	defer func() {
 		if err := redisClient.Close(); err != nil {
 			logger.Error().Err(err).Msg("failed to close redis client")
 		}
 	}()
 
-	asynqClient, asynqServer := worker.NewAsynq(cfg.RedisAddr, cfg.RedisDB)
+	asynqClient, asynqServer := worker.NewAsynq(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	defer func() {
 		if err := asynqClient.Close(); err != nil {
 			logger.Error().Err(err).Msg("failed to close asynq client")

@@ -13,6 +13,7 @@ type Config struct {
 	LogLevel           string        `env:"LOG_LEVEL" env-default:"info"`
 	PostgresDSN        string        `env:"POSTGRES_DSN" env-required:"true"`
 	RedisAddr          string        `env:"REDIS_ADDR" env-default:"localhost:6379"`
+	RedisPassword      string        `env:"REDIS_PASSWORD" env-default:""`
 	RedisDB            int           `env:"REDIS_DB" env-default:"0"`
 	SSHDialTimeout     time.Duration `env:"SSH_DIAL_TIMEOUT" env-default:"10s"`
 	AppEncryptionKey   string        `env:"APP_ENCRYPTION_KEY" env-default:"0123456789abcdef0123456789abcdef"`
