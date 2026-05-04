@@ -61,7 +61,7 @@ services:
       - backup_data:/data/backups
       - www_data:/var/www
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     deploy:
       resources:
         limits:

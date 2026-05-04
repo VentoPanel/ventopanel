@@ -31,18 +31,26 @@ func RegisterRoutes(
 ) {
 	engine.GET("/metrics", metricsHandler.Get)
 
+	// Global per-IP rate limit: 20 req/s burst, ~60 req/min sustained.
+	engine.Use(RateLimitMiddleware(globalLimiter))
+
 	api := engine.Group("/api/v1")
 	{
 		api.GET("/health", healthHandler.Get)
-		api.POST("/auth/login", authHandler.Login)
-		api.POST("/auth/mfa", authHandler.MFAVerify)
-		api.POST("/auth/register", authHandler.Register)
-		api.GET("/auth/totp/setup", authHandler.TOTPSetup)
-		api.POST("/auth/totp/enable", authHandler.TOTPEnable)
-		api.POST("/auth/totp/disable", authHandler.TOTPDisable)
+
+		// Auth endpoints get a stricter limit: 5 req/min per IP.
+		auth := api.Group("/auth")
+		auth.Use(RateLimitMiddleware(loginLimiter))
+		auth.POST("/login", authHandler.Login)
+		auth.POST("/mfa", authHandler.MFAVerify)
+		auth.POST("/register", authHandler.Register)
+		auth.GET("/totp/setup", authHandler.TOTPSetup)
+		auth.POST("/totp/enable", authHandler.TOTPEnable)
+		auth.POST("/totp/disable", authHandler.TOTPDisable)
 		api.GET("/api-tokens", apiTokenHandler.ListTokens)
 		api.POST("/api-tokens", apiTokenHandler.CreateToken)
 		api.DELETE("/api-tokens/:id", apiTokenHandler.RevokeToken)
+
 
 		// File Manager
 		api.GET("/files", fileManagerHandler.ListDir)
