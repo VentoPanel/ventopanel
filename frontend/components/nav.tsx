@@ -12,12 +12,12 @@ import {
   Menu, X, UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { clearToken } from "@/lib/api";
+import { clearToken, getRole } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { openCommandPalette } from "@/components/command-palette";
 
-const links = [
-  { href: "/",             label: "Dashboard",   icon: LayoutDashboard },
+const links: { href: string; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
+  { href: "/",             label: "Dashboard",    icon: LayoutDashboard },
   { href: "/servers",      label: "Servers",      icon: Server },
   { href: "/sites",        label: "Sites",        icon: Globe },
   { href: "/uptime",       label: "Uptime",       icon: Activity },
@@ -30,9 +30,9 @@ const links = [
   { href: "/monitor",      label: "Monitor",      icon: MonitorDot },
   { href: "/logs",         label: "Logs",         icon: ScrollText },
   { href: "/nginx",        label: "Nginx",        icon: Container },
-  { href: "/users",        label: "Team",         icon: Users },
-  { href: "/security",     label: "Security",     icon: ShieldCheck },
-  { href: "/settings",     label: "Settings",     icon: Settings },
+  { href: "/users",        label: "Team",         icon: Users,      adminOnly: true },
+  { href: "/security",     label: "Security",     icon: ShieldCheck, adminOnly: true },
+  { href: "/settings",     label: "Settings",     icon: Settings,   adminOnly: true },
 ];
 
 // ─── Shared nav link list ─────────────────────────────────────────────────────
@@ -44,9 +44,12 @@ function NavLinks({
   pathname: string;
   onNavigate?: () => void;
 }) {
+  const isAdmin = typeof window !== "undefined" && getRole() === "admin";
+  const visibleLinks = links.filter((l) => !l.adminOnly || isAdmin);
+
   return (
     <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
-      {links.map(({ href, label, icon: Icon }) => {
+      {visibleLinks.map(({ href, label, icon: Icon }) => {
         const active = pathname === href;
         return (
           <Link

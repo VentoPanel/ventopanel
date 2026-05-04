@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAdminGuard } from "@/hooks/use-auth";
 import {
   ShieldCheck,
   Key,
@@ -425,6 +426,7 @@ function TwoFactorSection() {
 // ─────────────────────────── Page ────────────────────────────────────────────
 
 export default function SecurityPage() {
+  useAdminGuard();
   return (
     <div className="max-w-3xl space-y-6">
       <div className="flex items-center gap-3">

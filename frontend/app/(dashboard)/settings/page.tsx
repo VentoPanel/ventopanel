@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Settings, Send, MessageSquare, Save, Eye, EyeOff, Activity, Rocket, FlaskConical, Loader2 } from "lucide-react";
+import { useAdminGuard } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchNotificationSettings,
@@ -49,6 +50,7 @@ function MaskedInput({
 }
 
 export default function SettingsPage() {
+  useAdminGuard();
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({

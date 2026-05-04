@@ -18,7 +18,7 @@ import {
   inviteUser,
   type User,
 } from "@/lib/api";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, useAdminGuard } from "@/hooks/use-auth";
 import {
   Card,
   CardContent,
@@ -61,6 +61,7 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 export default function UsersPage() {
+  useAdminGuard();
   const qc = useQueryClient();
   const { isAdmin } = useAuth();
 

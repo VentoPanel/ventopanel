@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { getRole } from "@/lib/api";
 
 export interface AuthInfo {
@@ -22,4 +23,15 @@ export function useAuth(): AuthInfo {
     isEditor: role === "editor",
     canWrite: role === "admin" || role === "editor",
   };
+}
+
+// Redirects non-admin users to "/" — use at the top of admin-only pages.
+export function useAdminGuard() {
+  const router = useRouter();
+  const { isAdmin } = useAuth();
+  useEffect(() => {
+    if (typeof window !== "undefined" && getRole() && getRole() !== "admin") {
+      router.replace("/");
+    }
+  }, [isAdmin, router]);
 }
